@@ -17,6 +17,30 @@ syncai_backend ─────────┼──────────► s
 syncai_sys_manager ───────────────────────────────────────────┘
 ```
 
+## This repository
+
+`SyncAI-Robot-Interface` — the package lives at the repo **root**, the same
+layout `SyncAI-Robot-Backend` uses. It was split out of `SyncAI-Robot-Workspace`
+in 2026-09 with `git subtree split`, so the history below predates the split.
+
+It is the one thing every other repo has to agree on, which is exactly why it is
+its own repo: a consumer imports *this*, not the whole workspace. It depends on
+nothing but `ament_cmake`, `rosidl_default_generators` and `builtin_interfaces`
+— no first-party package, no workspace path. Keep it that way; an interface
+package that needs one of its own consumers is no longer an interface.
+
+Consumers materialise it with vcstool, from their own root:
+
+```bash
+vcs import < interface.repos          # -> src/syncai_common
+colcon build --packages-select syncai_common
+```
+
+Known consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
+`syncai_driver_manager`. A change here is an ABI break for all four — see
+**Gotchas** at the bottom, which is not boilerplate now that they rebuild
+separately.
+
 ## Messages
 
 ### Robot state aggregate

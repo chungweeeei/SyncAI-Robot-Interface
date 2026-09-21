@@ -1,0 +1,24 @@
+# colcon artifacts, if anyone builds this package in place rather than from the
+# workspace it is vcs-imported into
+build/
+install/
+log/
+
+# Generated interfaces land in the install space, never here.
+__pycache__/
+*.py[cod]
+
+# Editor / IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
