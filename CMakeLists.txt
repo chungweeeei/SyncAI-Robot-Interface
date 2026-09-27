@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetPolicyMode.srv"
   "srv/SetSpeedScale.srv"
   "srv/SwitchMode.srv"
+  "srv/ResetLIO.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES builtin_interfaces
 )
