@@ -18,8 +18,8 @@
 #   patches/<i>.pcd    one body-frame cloud per keyframe
 #   poses.txt          one line per keyframe: "<i>.pcd tx ty tz qw qx qy qz"
 # patches/ is removed and recreated on each save. The layout is what the
-# workspace's map catalogue expects under map/<name>/ and what the fork's hba
-# refines. Nothing written here names the map or holds an absolute path --
+# workspace's map catalogue expects under map/<name>/ and what hba_node
+# (RefineMap, also syncai_mapping) refines. Nothing written here names the map or holds an absolute path --
 # poses.txt lists bare basenames -- and that is deliberate: it is what makes
 # renaming a map directory a single os.rename. Keep it that way.
 string file_path
