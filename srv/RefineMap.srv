@@ -1,0 +1,17 @@
+# Load a saved map's keyframe patches and refine their poses offline with
+# hierarchical bundle adjustment (HBA / BALM). Served by hba_node
+# (`syncai_mapping`, in SyncAI-Robot-Workspace) on the relative name
+# `refine_map`, so it lands on <robot_id>/hba/refine_map. Not part of any
+# session and not called by the backend: an operator runs the node by hand
+# after a mapping drive. Moved here from SyncAI-Fast-LIO2's `interface`
+# package in 2026-09 with the node that serves it.
+#
+# maps_path is the map directory save_maps wrote with save_patches: true --
+# it must contain patches/<i>.pcd and poses.txt (see SaveMaps.srv for the
+# layout). The service returns as soon as the patches are loaded; the
+# optimisation itself runs on the node's timer afterwards, hba_iter passes,
+# and `map_points` shows the map being refined. SavePoses writes the result.
+string maps_path
+---
+bool success
+string message

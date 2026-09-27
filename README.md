@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 14 messages, 10 services, 1
+The stack's shared ROS 2 interface definitions — 14 messages, 12 services, 1
 action. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
 
 Everything here exists because two or more packages need to agree on a wire
@@ -191,6 +191,8 @@ a conveyor's `live_info.phase`.
 | `ResetLIO` | *(empty)* | `success`, `message`, `float64 last_odom_time` | `syncai_pointlio` on `pointlio/reset` |
 | `SaveMaps` | `file_path`, `save_patches` | `success`, `message` | `syncai_mapping` on `pgo/save_maps` |
 | `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` on `pgo/reset_mapping` |
+| `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`, offline, by hand) on `hba/refine_map` |
+| `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) on `hba/save_poses` |
 
 Notes:
 
@@ -241,6 +243,11 @@ Notes:
   (`map.pcd`, `patches/<i>.pcd`, `poses.txt` with bare basenames and no
   absolute paths); the `.srv` documents it. It was served from
   SyncAI-Fast-LIO2 until 2026-09 and is now `syncai_mapping`'s.
+- **`RefineMap` / `SavePoses` are the offline half of mapping** (`hba_node`,
+  also `syncai_mapping`): load the `patches/` + `poses.txt` a `SaveMaps` with
+  `save_patches: true` wrote, refine the poses, write them to a separate file.
+  Nothing in a session or in the backend calls them; they are here because
+  the node moved here and this package is where the stack's interfaces live.
 
 The `success`/`message` pair is the convention for everything here: callers check
 `success` and surface `message` verbatim (the backend maps a failed wifi connect

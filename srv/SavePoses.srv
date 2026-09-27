@@ -1,0 +1,14 @@
+# Write the poses RefineMap optimised, one line per keyframe in the same
+# "<i>.pcd tx ty tz qw qx qy qz" format poses.txt uses, to file_path (whose
+# parent directory must exist; an existing file is replaced). Served by
+# hba_node (`syncai_mapping`, in SyncAI-Robot-Workspace) on the relative name
+# `save_poses`, so it lands on <robot_id>/hba/save_poses. Not called by the
+# backend. Moved here from SyncAI-Fast-LIO2's `interface` package in 2026-09
+# with the node that serves it.
+#
+# Deliberately a separate file from the map's own poses.txt: the refined
+# poses are a candidate, and replacing the originals is the operator's call.
+string file_path
+---
+bool success
+string message
