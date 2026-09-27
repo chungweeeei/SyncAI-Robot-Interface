@@ -1,0 +1,35 @@
+# Give the localizer a coarse pose in the map frame and (re)load the map it
+# should register against. Served by localizer_node (SyncAI-Fast-LIO2's
+# `localizer`, the one FAST-LIO2 package still in the fork) on the relative
+# name `relocalize`, so it lands on <robot_id>/localizer/relocalize. The
+# backend calls it for the operator's initial pose and on every map switch.
+# Moved here from that repo's `interface` package in 2026-09, the last of its
+# services to come over, so that every interface the backend builds against
+# is in one package.
+#
+# SUCCESS IS A RECEIPT, NOT A RESULT. Registration runs asynchronously on the
+# localizer's timer with no deadline; this returns once the guess and the map
+# are accepted. IsValid (relocalize_check) is the only surface that reports
+# whether the registration after this guess actually converged.
+#
+# The pose is taken RAW, all six degrees of freedom. The `initialpose` topic
+# and the INI's [initial_pose] instead go through the localizer's planar-guess
+# path, which keeps the current roll / pitch / z and sets only x / y / yaw --
+# and that matters, because the lidar mount is tilted and the map is
+# gravity-aligned, so a flat 6-DOF guess never passes the rough-registration
+# score and the localizer retries forever. A relocalize call is therefore
+# normally followed by an `initialpose` publish; the backend's map switch does
+# exactly that, in that order.
+#
+# pcd_path is loaded during the call as a side effect (the localizer also
+# loads [map] pcd at construction). Angles are radians.
+string pcd_path
+float32 x
+float32 y
+float32 z
+float32 yaw
+float32 pitch
+float32 roll
+---
+bool success
+string message

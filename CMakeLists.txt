@@ -35,6 +35,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ResetMapping.srv"
   "srv/RefineMap.srv"
   "srv/SavePoses.srv"
+  "srv/Relocalize.srv"
+  "srv/IsValid.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES builtin_interfaces
 )

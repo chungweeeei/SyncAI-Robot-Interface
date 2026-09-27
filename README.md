@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 14 messages, 12 services, 1
+The stack's shared ROS 2 interface definitions — 14 messages, 14 services, 1
 action. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
 
 Everything here exists because two or more packages need to agree on a wire
@@ -17,6 +17,7 @@ syncai_backend ─────────┼──────────► s
 syncai_sys_manager ───────────────────────────────────────────┘
 
 syncai_backend ──SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
+syncai_backend ──Relocalize / IsValid──────► localizer (SyncAI-Fast-LIO2)
 ```
 
 ## This repository
@@ -39,11 +40,12 @@ colcon build --packages-select syncai_common
 ```
 
 Known consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
-`syncai_driver_manager`, `syncai_pointlio` and `syncai_mapping`. Since
-`pgo` moved into the workspace as `syncai_mapping` (2026-09) there is no
-consumer in a third repository any more. A change here is an ABI break for all
-of them — see **Gotchas** at the bottom, which is not boilerplate now that they
-rebuild separately.
+`syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`, and — from a
+third repository — `localizer` in `SyncAI-Fast-LIO2`, which serves
+`Relocalize` / `IsValid` from here since its own `interface` package was
+retired (2026-09). A change here is an ABI break for all of them — see
+**Gotchas** at the bottom, which is not boilerplate now that they rebuild
+separately.
 
 ## Messages
 
@@ -193,6 +195,8 @@ a conveyor's `live_info.phase`.
 | `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` on `pgo/reset_mapping` |
 | `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`, offline, by hand) on `hba/refine_map` |
 | `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) on `hba/save_poses` |
+| `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `localizer` (SyncAI-Fast-LIO2) on `localizer/relocalize` |
+| `IsValid` | `int32 code` | `bool valid` | `localizer` on `localizer/relocalize_check` |
 
 Notes:
 
@@ -248,6 +252,16 @@ Notes:
   `save_patches: true` wrote, refine the poses, write them to a separate file.
   Nothing in a session or in the backend calls them; they are here because
   the node moved here and this package is where the stack's interfaces live.
+- **`Relocalize` success is a receipt, not a result; `IsValid` is the
+  result.** Registration runs async on the localizer's timer; `IsValid` with
+  `code: 0` reports whether the first registration after the guess converged
+  (`code: 1` always answers `valid: true`, a liveness probe). `Relocalize`
+  takes the raw 6-DOF pose, so the backend follows it with an `initialpose`
+  publish — the tilted lidar mount means a flat guess never converges. These
+  two are the only services here whose server is in another repository
+  (`SyncAI-Fast-LIO2`'s `localizer`); its former `interface` package was
+  retired when they came over, so every interface the backend builds against
+  is in this one package.
 
 The `success`/`message` pair is the convention for everything here: callers check
 `success` and surface `message` verbatim (the backend maps a failed wifi connect
