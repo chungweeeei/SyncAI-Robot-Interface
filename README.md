@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 14 messages, 7 services, 1
+The stack's shared ROS 2 interface definitions — 14 messages, 8 services, 1
 action. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
 
 Everything here exists because two or more packages need to agree on a wire
@@ -15,6 +15,8 @@ syncai_backend ─────────┼──────────► s
         │  ScanWifiNetworks / ConnectWifiNetwork              ▲
         ▼                                                     │ WifiStatus
 syncai_sys_manager ───────────────────────────────────────────┘
+
+pgo_node (SyncAI-Fast-LIO2) ──ResetLIO──► syncai_pointlio
 ```
 
 ## This repository
@@ -37,9 +39,10 @@ colcon build --packages-select syncai_common
 ```
 
 Known consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
-`syncai_driver_manager`. A change here is an ABI break for all four — see
-**Gotchas** at the bottom, which is not boilerplate now that they rebuild
-separately.
+`syncai_driver_manager`, `syncai_pointlio`, and — from a third repository —
+`pgo` in `SyncAI-Fast-LIO2`, the client of `ResetLIO`. A change here is an ABI
+break for all of them — see **Gotchas** at the bottom, which is not boilerplate
+now that they rebuild separately.
 
 ## Messages
 
@@ -184,6 +187,7 @@ a conveyor's `live_info.phase`.
 | `SetSpeedScale` | six `float64` scales | `success` | `syncai_driver_manager` on `set_speed_scale` |
 | `SwitchMode` | `uint8 mode` | `success`, `message` | `syncai_sys_manager` on `switch_mode` |
 | `GetMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` on `get_mode` |
+| `ResetLIO` | *(empty)* | `success`, `message`, `float64 last_odom_time` | `syncai_pointlio` on `pointlio/reset` |
 
 Notes:
 
@@ -216,6 +220,18 @@ Notes:
   workspace is a comment in `msg/RobotLowLevelMode.msg` — which documents the same
   policy vocabulary for `RobotState.low_level_mode.policy_state` and explains why
   neither place declares constants for it.
+
+- **`ResetLIO` is one half of a two-file contract.** The server is
+  `pointlio_node` (`syncai_pointlio`, in the workspace); the only client is
+  `pgo_node`'s `reset_mapping` in `SyncAI-Fast-LIO2`, whose own request type,
+  `interface/srv/ResetMapping`, stays in that repo. It moved here from that
+  repo's `interface` package in 2026-09 when pointlio was ported into the
+  workspace, because it was the one `.srv` whose server and client no longer
+  shared a repository. `last_odom_time` is the whole ordering contract between
+  the two nodes — the lidar-clock stamp of the last odometry sample of the old
+  run, which the client uses to drop every pair at or before it. The request is
+  empty on purpose: a reset is not a reconfigure. The comments in the `.srv` are
+  the design record; read them before changing either side.
 
 The `success`/`message` pair is the convention for everything here: callers check
 `success` and surface `message` verbatim (the backend maps a failed wifi connect
