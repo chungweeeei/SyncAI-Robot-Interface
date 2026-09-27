@@ -31,6 +31,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetSpeedScale.srv"
   "srv/SwitchMode.srv"
   "srv/ResetLIO.srv"
+  "srv/SaveMaps.srv"
+  "srv/ResetMapping.srv"
   "action/ExecuteTask.action"
   DEPENDENCIES builtin_interfaces
 )
