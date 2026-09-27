@@ -1,0 +1,17 @@
+# Did the first registration after the last relocalize / initialpose guess
+# succeed? Served by localizer_node (SyncAI-Fast-LIO2's `localizer`) on the
+# relative name `relocalize_check`, so it lands on
+# <robot_id>/localizer/relocalize_check. The backend polls it after a
+# Relocalize call, because that call's success is only a receipt. Moved here
+# from that repo's `interface` package in 2026-09 with Relocalize.
+#
+# code 0 asks the real question. code 1 always answers valid: true, for
+# callers that only want to know the service is up. Any other code is
+# treated as 0.
+#
+# This is the ONLY quality signal the stack has. RobotState.localization_valid
+# is TF-presence only and reads true against a map the robot was never
+# localized in; do not "fix" it from anything but this.
+int32 code
+---
+bool valid

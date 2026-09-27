@@ -4,14 +4,12 @@
 #
 # Served by pointlio_node (`syncai_pointlio`, in SyncAI-Robot-Workspace) on the
 # relative name `reset`, so it lands on <robot_id>/pointlio/reset. Nobody calls
-# this directly in normal operation -- pgo_node's reset_mapping owns the
-# ordering and this is the second half of it. The other half of that contract
-# is `interface/srv/ResetMapping.srv` in SyncAI-Fast-LIO2 (the pgo client's own
-# repo): the two files are the specification of the reset, and they live in two
-# repositories because this one crossed a boundary (server here, client there)
-# while ResetMapping is served and consumed inside that repo and by the backend.
-# It moved here from that `interface` package in 2026-09, when pointlio was
-# ported into the workspace as `syncai_pointlio`.
+# this directly in normal operation -- pgo_node's reset_mapping (`syncai_mapping`,
+# same workspace) owns the ordering and this is the second half of it. The other
+# half of that contract is ResetMapping.srv beside this file: the two are the
+# specification of the reset, and they read together. Both moved here from
+# SyncAI-Fast-LIO2's `interface` package in 2026-09, when pointlio and then pgo
+# were ported into the workspace.
 #
 # The request is empty on purpose. A reset is not a reconfigure: ROS parameters
 # and the extrinsics are left exactly as launched, because the thing being

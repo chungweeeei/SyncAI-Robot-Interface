@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 14 messages, 8 services, 1
+The stack's shared ROS 2 interface definitions — 14 messages, 14 services, 1
 action. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
 
 Everything here exists because two or more packages need to agree on a wire
@@ -16,7 +16,8 @@ syncai_backend ─────────┼──────────► s
         ▼                                                     │ WifiStatus
 syncai_sys_manager ───────────────────────────────────────────┘
 
-pgo_node (SyncAI-Fast-LIO2) ──ResetLIO──► syncai_pointlio
+syncai_backend ──SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
+syncai_backend ──Relocalize / IsValid──────► localizer (SyncAI-Fast-LIO2)
 ```
 
 ## This repository
@@ -39,10 +40,12 @@ colcon build --packages-select syncai_common
 ```
 
 Known consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
-`syncai_driver_manager`, `syncai_pointlio`, and — from a third repository —
-`pgo` in `SyncAI-Fast-LIO2`, the client of `ResetLIO`. A change here is an ABI
-break for all of them — see **Gotchas** at the bottom, which is not boilerplate
-now that they rebuild separately.
+`syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`, and — from a
+third repository — `localizer` in `SyncAI-Fast-LIO2`, which serves
+`Relocalize` / `IsValid` from here since its own `interface` package was
+retired (2026-09). A change here is an ABI break for all of them — see
+**Gotchas** at the bottom, which is not boilerplate now that they rebuild
+separately.
 
 ## Messages
 
@@ -188,6 +191,12 @@ a conveyor's `live_info.phase`.
 | `SwitchMode` | `uint8 mode` | `success`, `message` | `syncai_sys_manager` on `switch_mode` |
 | `GetMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` on `get_mode` |
 | `ResetLIO` | *(empty)* | `success`, `message`, `float64 last_odom_time` | `syncai_pointlio` on `pointlio/reset` |
+| `SaveMaps` | `file_path`, `save_patches` | `success`, `message` | `syncai_mapping` on `pgo/save_maps` |
+| `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` on `pgo/reset_mapping` |
+| `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`, offline, by hand) on `hba/refine_map` |
+| `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) on `hba/save_poses` |
+| `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `localizer` (SyncAI-Fast-LIO2) on `localizer/relocalize` |
+| `IsValid` | `int32 code` | `bool valid` | `localizer` on `localizer/relocalize_check` |
 
 Notes:
 
@@ -221,17 +230,38 @@ Notes:
   policy vocabulary for `RobotState.low_level_mode.policy_state` and explains why
   neither place declares constants for it.
 
-- **`ResetLIO` is one half of a two-file contract.** The server is
-  `pointlio_node` (`syncai_pointlio`, in the workspace); the only client is
-  `pgo_node`'s `reset_mapping` in `SyncAI-Fast-LIO2`, whose own request type,
-  `interface/srv/ResetMapping`, stays in that repo. It moved here from that
-  repo's `interface` package in 2026-09 when pointlio was ported into the
-  workspace, because it was the one `.srv` whose server and client no longer
-  shared a repository. `last_odom_time` is the whole ordering contract between
-  the two nodes — the lidar-clock stamp of the last odometry sample of the old
-  run, which the client uses to drop every pair at or before it. The request is
-  empty on purpose: a reset is not a reconfigure. The comments in the `.srv` are
-  the design record; read them before changing either side.
+- **`ResetLIO` and `ResetMapping` are the two halves of one contract.** The
+  backend calls `reset_mapping` on `pgo_node` (`syncai_mapping`); `pgo_node`
+  pauses intake, calls `reset` on `pointlio_node` (`syncai_pointlio`) over
+  `ResetLIO`, rebuilds its graph and resumes, dropping every cloud/odom pair
+  stamped at or before the `last_odom_time` the LIO returned. Both moved here
+  from SyncAI-Fast-LIO2's `interface` package in 2026-09, with the nodes that
+  serve them (`ResetLIO` first with pointlio, `ResetMapping` and `SaveMaps`
+  with pgo). `ResetLIO`'s request is empty on purpose — a reset is not a
+  reconfigure — and `ResetMapping.reset_lio: false` resets the graph alone, a
+  bag-replay affordance the console never sends. The comments in the two
+  `.srv` files are the design record; read them before changing any side.
+  **The robot must be standing still** when a reset lands: the LIO re-runs a
+  static, gravity-aligning IMU init, and nothing in either node enforces that.
+- **`SaveMaps` writes a directory layout the map catalogue depends on**
+  (`map.pcd`, `patches/<i>.pcd`, `poses.txt` with bare basenames and no
+  absolute paths); the `.srv` documents it. It was served from
+  SyncAI-Fast-LIO2 until 2026-09 and is now `syncai_mapping`'s.
+- **`RefineMap` / `SavePoses` are the offline half of mapping** (`hba_node`,
+  also `syncai_mapping`): load the `patches/` + `poses.txt` a `SaveMaps` with
+  `save_patches: true` wrote, refine the poses, write them to a separate file.
+  Nothing in a session or in the backend calls them; they are here because
+  the node moved here and this package is where the stack's interfaces live.
+- **`Relocalize` success is a receipt, not a result; `IsValid` is the
+  result.** Registration runs async on the localizer's timer; `IsValid` with
+  `code: 0` reports whether the first registration after the guess converged
+  (`code: 1` always answers `valid: true`, a liveness probe). `Relocalize`
+  takes the raw 6-DOF pose, so the backend follows it with an `initialpose`
+  publish — the tilted lidar mount means a flat guess never converges. These
+  two are the only services here whose server is in another repository
+  (`SyncAI-Fast-LIO2`'s `localizer`); its former `interface` package was
+  retired when they came over, so every interface the backend builds against
+  is in this one package.
 
 The `success`/`message` pair is the convention for everything here: callers check
 `success` and surface `message` verbatim (the backend maps a failed wifi connect

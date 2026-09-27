@@ -1,0 +1,29 @@
+# Serialise the map built so far. Served by pgo_node (`syncai_mapping`, in
+# SyncAI-Robot-Workspace) on the relative name `save_maps`, so it lands on
+# <robot_id>/pgo/save_maps; the backend's map catalogue (POST /api/v1/maps) is
+# the caller. Moved here from SyncAI-Fast-LIO2's `interface` package in 2026-09
+# with the node that serves it, because the backend builds against this
+# package, not that repo.
+#
+# pgo_node holds its keyframes in RAM and this is the ONLY thing that writes
+# them out: whatever has not been saved when the process ends, or when
+# reset_mapping runs, is gone short of replaying a bag.
+#
+# file_path must be an existing directory (the node does not create it;
+# "<path> IS NOT EXISTS!" otherwise). Into it the node writes:
+#   map.pcd            every keyframe's body cloud placed with its
+#                      loop-closure-corrected global pose and concatenated
+#                      (binary PCD, not voxel-filtered)
+# and, with save_patches:
+#   patches/<i>.pcd    one body-frame cloud per keyframe
+#   poses.txt          one line per keyframe: "<i>.pcd tx ty tz qw qx qy qz"
+# patches/ is removed and recreated on each save. The layout is what the
+# workspace's map catalogue expects under map/<name>/ and what hba_node
+# (RefineMap, also syncai_mapping) refines. Nothing written here names the map or holds an absolute path --
+# poses.txt lists bare basenames -- and that is deliberate: it is what makes
+# renaming a map directory a single os.rename. Keep it that way.
+string file_path
+bool save_patches
+---
+bool success
+string message
