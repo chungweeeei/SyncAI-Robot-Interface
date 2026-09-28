@@ -1,7 +1,7 @@
 # Switch the robot's operating mode by rebuilding the byobu session that
 # implements it: AUTO tears down the mapping session and brings up
 # config/sessions/start_nav.yaml (navigation), MANUAL does the reverse and brings
-# up config/sessions/start_mapping.yaml (FAST-LIO2 + PGO mapping).
+# up config/sessions/start_mapping.yaml (syncai_pointlio + syncai_mapping).
 #
 # Served by syncai_sys_manager on the relative name `switch_mode`, so it lands on
 # <robot_id>/switch_mode. This restarts most of the stack — it is not a cheap
