@@ -17,7 +17,7 @@ syncai_backend ─────────┼──────────► s
 syncai_sys_manager ───────────────────────────────────────────┘
 
 syncai_backend ──SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
-syncai_backend ──Relocalize / IsValid──────► localizer (SyncAI-Fast-LIO2)
+syncai_backend ──Relocalize / IsValid──────► syncai_localizer (localizer_node)
 ```
 
 ## This repository
@@ -40,10 +40,10 @@ colcon build --packages-select syncai_common
 ```
 
 Known consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
-`syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`, and — from a
-third repository — `localizer` in `SyncAI-Fast-LIO2`, which serves
-`Relocalize` / `IsValid` from here since its own `interface` package was
-retired (2026-09). A change here is an ABI break for all of them — see
+`syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping` and
+`syncai_localizer`, which serves `Relocalize` / `IsValid`. The localizer used
+to be the one consumer in a third repository (`SyncAI-Fast-LIO2`); it moved
+into the workspace in 2026-09, and nothing reads that fork any more. A change here is an ABI break for all of them — see
 **Gotchas** at the bottom, which is not boilerplate now that they rebuild
 separately.
 
@@ -195,8 +195,8 @@ a conveyor's `live_info.phase`.
 | `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` on `pgo/reset_mapping` |
 | `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`, offline, by hand) on `hba/refine_map` |
 | `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) on `hba/save_poses` |
-| `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `localizer` (SyncAI-Fast-LIO2) on `localizer/relocalize` |
-| `IsValid` | `int32 code` | `bool valid` | `localizer` on `localizer/relocalize_check` |
+| `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` on `relocalize` (bare: `<robot_id>/relocalize`) |
+| `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` on `relocalize_check` |
 
 Notes:
 
@@ -257,11 +257,11 @@ Notes:
   `code: 0` reports whether the first registration after the guess converged
   (`code: 1` always answers `valid: true`, a liveness probe). `Relocalize`
   takes the raw 6-DOF pose, so the backend follows it with an `initialpose`
-  publish — the tilted lidar mount means a flat guess never converges. These
-  two are the only services here whose server is in another repository
-  (`SyncAI-Fast-LIO2`'s `localizer`); its former `interface` package was
-  retired when they came over, so every interface the backend builds against
-  is in this one package.
+  publish — the tilted lidar mount means a flat guess never converges. Both
+  are served by `syncai_localizer` in the workspace, under the bare robot_id
+  namespace — `<robot_id>/relocalize`, not `<robot_id>/localizer/relocalize`
+  as these docs said until the localizer was ported from `SyncAI-Fast-LIO2`
+  (whose `interface` package they came from).
 
 The `success`/`message` pair is the convention for everything here: callers check
 `success` and surface `message` verbatim (the backend maps a failed wifi connect

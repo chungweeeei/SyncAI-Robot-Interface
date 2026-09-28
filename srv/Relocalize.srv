@@ -1,11 +1,13 @@
 # Give the localizer a coarse pose in the map frame and (re)load the map it
-# should register against. Served by localizer_node (SyncAI-Fast-LIO2's
-# `localizer`, the one FAST-LIO2 package still in the fork) on the relative
-# name `relocalize`, so it lands on <robot_id>/localizer/relocalize. The
-# backend calls it for the operator's initial pose and on every map switch.
-# Moved here from that repo's `interface` package in 2026-09, the last of its
-# services to come over, so that every interface the backend builds against
-# is in one package.
+# should register against. Served by localizer_node (the workspace's
+# syncai_localizer) on the relative name `relocalize`, in the bare robot_id
+# namespace, so it lands on <robot_id>/relocalize -- not
+# <robot_id>/localizer/relocalize, which is what this comment said until the
+# port. The backend calls it for the operator's initial pose and on every map
+# switch. Moved here in 2026-09 from SyncAI-Fast-LIO2's `interface` package,
+# the last of its services to come over, so that every interface the backend
+# builds against is in one package; the localizer itself followed into the
+# workspace later that month.
 #
 # SUCCESS IS A RECEIPT, NOT A RESULT. Registration runs asynchronously on the
 # localizer's timer with no deadline; this returns once the guess and the map
