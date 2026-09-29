@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SetPolicyMode.srv"
   "srv/SetSpeedScale.srv"
   "srv/SwitchMode.srv"
+  "srv/RestartMode.srv"
   "srv/ResetLIO.srv"
   "srv/SaveMaps.srv"
   "srv/ResetMapping.srv"
