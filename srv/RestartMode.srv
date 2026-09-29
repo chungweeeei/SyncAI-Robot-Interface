@@ -1,0 +1,31 @@
+# Rebuild the byobu session of the operating mode that is already live — the
+# same kill-and-rebuild switch_mode does, but onto the mode it is in now.
+#
+# Served by syncai_sys_manager on the relative name `restart_mode`, so it lands
+# on <robot_id>/restart_mode. It exists because switch_mode deliberately treats
+# "switch to the live mode" as a no-op, which left no way to restart a wedged
+# stack short of bouncing through the other mode (bringing up a whole second
+# stack just to tear it down) or killing the session by hand and restarting the
+# container. Like switch_mode, this restarts most of the stack and takes as long
+# as ~40 byobu commands.
+#
+# The mode is not a request field: it is whatever get_mode would report, derived
+# from which session byobu has, so the request is empty. In practice that makes
+# it AUTO only. Refused (success false, nothing touched) when:
+#   - no session is running (MAINTENANCE) — there is nothing to restart; use
+#     switch_mode to bring a mode up;
+#   - both sessions are running — which one to keep is ambiguous; switch_mode is
+#     the cleanup for that state;
+#   - the live mode is MANUAL — always, with no override. pgo_node holds its
+#     keyframes in RAM and only pgo/save_maps serialises them, so a restart can
+#     drop an unsaved map, and nothing in sys_manager can tell whether it was
+#     saved. Start a new map with pgo/reset_mapping, or leave MANUAL with
+#     switch_mode.
+---
+bool success
+string message
+# The mode and byobu session that are live after the call — what was rebuilt on
+# success, what was left alone on a refusal. mode values are RobotMode's
+# constants; session is empty in MAINTENANCE.
+uint8 mode
+string session
