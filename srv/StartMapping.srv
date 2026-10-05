@@ -1,0 +1,43 @@
+# Begin a mapping run: move pgo_node from IDLE to MAPPING.
+#
+# Served by pgo_node (`syncai_mapping`, in SyncAI-Robot-Workspace) on the
+# relative name `start_mapping`, so it lands on <robot_id>/pgo/start_mapping.
+# The backend is its only caller (the console's "Start mapping" control).
+# Added 2026-10 together with msg/MappingStatus.msg, when pgo gained an
+# explicit idle state: until then the mapping session began building a graph
+# the moment pointlio published, so the drive from wherever the robot was
+# powered on to the site's starting point was already part of the map, and
+# the only way to end a run was to tear the session down.
+#
+# Same sequence as ResetMapping, with a different precondition: pause intake,
+# reset the LIO front end over ResetLIO (reset_lio true), build a fresh pose
+# graph, resume behind a timestamp gate that drops the old stream's tail.
+# "Begin a clean run from where the robot stands now" is literally true only
+# with reset_lio: the pose graph's origin is the odometry origin, and a LIO
+# reset puts that at the robot's current pose with a fresh gravity alignment.
+#
+# Refused (success false, nothing touched) when pgo is already MAPPING -- use
+# reset_mapping to start over, or save_maps to finish -- and while another
+# start or reset is in flight. A failed ResetLIO round trip leaves pgo IDLE.
+# A successful save_maps is what brings pgo back to IDLE, so the run is
+# bracketed: start_mapping ... save_maps, then start_mapping again.
+#
+# THE ROBOT MUST BE STANDING STILL when reset_lio is true, from the call until
+# pointlio has re-initialised (a few seconds; it publishes nothing meanwhile,
+# so the live scan goes dark and comes back). See ResetLIO.srv. Nothing in
+# either node enforces it.
+
+# Reset the LIO front end first -- what the console sends. False begins a
+# graph over the running odometry stream: the origin is then wherever pointlio
+# was launched, not where the robot stands. A bag-replay affordance.
+bool reset_lio
+---
+bool success
+# Rendered verbatim by the operator console, so pgo writes it as UI copy
+# (including the stillness warning) rather than as a log line.
+string message
+
+# pointlio's last published odometry stamp, echoed for log correlation. 0.0
+# when reset_lio was false or the front end had not reached MAPPING. Pairs
+# stamped at or before it are the old stream's tail and are dropped.
+float64 lio_last_odom_time
