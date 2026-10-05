@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 14 messages, 14 services, 1
+The stack's shared ROS 2 interface definitions — 15 messages, 15 services, 1
 action. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
 
 Everything here exists because two or more packages need to agree on a wire
@@ -16,7 +16,8 @@ syncai_backend ─────────┼──────────► s
         ▼                                                     │ WifiStatus
 syncai_sys_manager ───────────────────────────────────────────┘
 
-syncai_backend ──SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
+syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
+syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid──────► syncai_localizer (localizer_node)
 ```
 
@@ -156,6 +157,29 @@ These are the robot's own formats rather than `sensor_msgs/Imu` and
 fields that the standard messages have nowhere to put, and because `IMUState`
 mirrors the field layout the gait controller already sends.
 
+### MappingStatus
+
+`pgo_node`'s run state, published on the relative topic `mapping_status`
+(`<robot_id>/pgo/mapping_status`) with **RELIABLE + TRANSIENT_LOCAL depth 1**
+— the same latched QoS as its `map_cloud_file` notice, so a backend that
+(re)connects mid-session learns the state at once. Sent on every transition
+and at 1 Hz. Consumed by `syncai_backend` for `GET /api/v1/mapping`.
+
+```
+uint8 IDLE      = 0   # no graph, intake dropped, /dev/shm empty; the session starts here
+uint8 MAPPING   = 1   # keyframes accumulate; reset_mapping discards and stays here
+uint8 RESETTING = 2   # transient: a start/reset is waiting on the ResetLIO round trip
+uint8 state
+uint32 key_poses
+uint32 loop_closures
+builtin_interfaces/Time stamp
+```
+
+`start_mapping` is IDLE → MAPPING, a successful `save_maps` is MAPPING → IDLE,
+`reset_mapping` is MAPPING → MAPPING. `IDLE = 0` for the same reason
+`RobotStatus.UNINITIALIZED = 0`: a default-constructed message reads as the
+safe state. Added 2026-10 with `StartMapping`, when pgo gained an idle state.
+
 ### ArtifactState
 
 `ArtifactState` has **no publisher or subscriber in this workspace**. It is the
@@ -193,6 +217,7 @@ a conveyor's `live_info.phase`.
 | `ResetLIO` | *(empty)* | `success`, `message`, `float64 last_odom_time` | `syncai_pointlio` on `pointlio/reset` |
 | `SaveMaps` | `file_path`, `save_patches` | `success`, `message` | `syncai_mapping` on `pgo/save_maps` |
 | `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` on `pgo/reset_mapping` |
+| `StartMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time` | `syncai_mapping` on `pgo/start_mapping` |
 | `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`, offline, by hand) on `hba/refine_map` |
 | `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) on `hba/save_poses` |
 | `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` on `relocalize` (bare: `<robot_id>/relocalize`) |
@@ -243,6 +268,14 @@ Notes:
   `.srv` files are the design record; read them before changing any side.
   **The robot must be standing still** when a reset lands: the LIO re-runs a
   static, gravity-aligning IMU init, and nothing in either node enforces that.
+- **`StartMapping` is the same sequence from IDLE.** Since 2026-10 pgo comes
+  up idle in a mapping session and banks nothing until `start_mapping`, which
+  runs `ResetMapping`'s pause → `ResetLIO` → fresh graph → resume with the
+  precondition inverted (refused while MAPPING, as `reset_mapping` is refused
+  while IDLE). A successful `SaveMaps` ends the run — pgo returns to IDLE,
+  frees its keyframes and clears `/dev/shm` — so a run is bracketed
+  `start_mapping … save_maps`. `MappingStatus` (above) is how a consumer
+  tells the two states apart. The same stillness rule applies to a start.
 - **`SaveMaps` writes a directory layout the map catalogue depends on**
   (`map.pcd`, `patches/<i>.pcd`, `poses.txt` with bare basenames and no
   absolute paths); the `.srv` documents it. It was served from
@@ -361,8 +394,9 @@ ros2 interface list | grep syncai_common
   clock for display, and `motor_status.timestamp` is no better now that it is
   seconds too — subscribe `motor_states` directly for sub-second resolution.
 - **No message carries a `std_msgs/Header`.** Timestamps are bare `uint64`
-  fields and there is no `frame_id` anywhere — these are status messages, not
-  sensor data to be transformed. Anything needing TF uses a `geometry_msgs` type
+  fields — except `MappingStatus.stamp`, a `builtin_interfaces/Time`, the one
+  field here of another package's type — and there is no `frame_id` anywhere:
+  these are status messages, not sensor data to be transformed. Anything needing TF uses a `geometry_msgs` type
   instead. `RobotLowLevelMode` is the extreme case: its upstream
   `std_msgs/Int32MultiArray` has no header either and the telemetry link carries no
   clock, so there is no timestamp available anywhere on that path — which is why

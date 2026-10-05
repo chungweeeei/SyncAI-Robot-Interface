@@ -7,10 +7,14 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+# MappingStatus.stamp is a builtin_interfaces/Time -- the first field here of
+# another package's type, so the DEPENDENCIES entry below is now load-bearing.
+find_package(builtin_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ArtifactState.msg"
   "msg/IMUState.msg"
+  "msg/MappingStatus.msg"
   "msg/MotorState.msg"
   "msg/MotorStates.msg"
   "msg/RobotBatteryStatus.msg"
@@ -34,6 +38,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ResetLIO.srv"
   "srv/SaveMaps.srv"
   "srv/ResetMapping.srv"
+  "srv/StartMapping.srv"
   "srv/RefineMap.srv"
   "srv/SavePoses.srv"
   "srv/Relocalize.srv"
