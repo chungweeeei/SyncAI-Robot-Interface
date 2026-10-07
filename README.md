@@ -80,6 +80,7 @@ RobotState
      ├─ int32  policy_state           0 PPO / 1 HIMLOCO / 2 CHAMP / 3 ISSAC (no sentinel)
      ├─ int32  motion_state           0 Stand / 1 Locomotion / 2 LieDown / 3 Damping /
      │                                4 ESTOP / 8 UNKNOWN (MPC's code is unknown)
+     └─ bool   safety_state           driver_manager's safety lock engaged (OURS, not the controller's)
 ```
 
 `localization_valid` and `motor_status.timestamp` are **operator-facing and must
@@ -100,7 +101,7 @@ interleaves them, and every per-robot consumer here is scoped to exactly one.
 | `RobotBatteryStatus` | `battery_percentage` | 0–100, already scaled from `sensor_msgs/BatteryState.percentage` |
 | `RobotMode` | `MAINTENANCE=0`, `MANUAL=1`, `AUTO=2` | **Constants only** — no data fields. Never published on its own; it exists so `RobotState.mode` has named values. |
 | `RobotStatus` | `UNINITIALIZED=0`, `IDLE=1`, `RUNNING=2`, `WARNING=3`, `ERROR=4`, `CHARGING=5` | Same pattern, for `state`. `UNINITIALIZED` holds `0` on purpose, so a default-constructed message does not claim to be `IDLE`. |
-| `RobotLowLevelMode` | `policy_state`, `motion_state` | The gait controller's own state machine, from the `mode` topic. Both indices are the **controller's** vocabularies, not ours, and carry **no constants** for the same reason `SetPolicyMode.mode` does not — see the note there. It carries **no freshness field**, so `0 / 0` before the first sample is indistinguishable from a real `PPO / Stand`. |
+| `RobotLowLevelMode` | `policy_state`, `motion_state`, `safety_state` | The gait controller's own state machine, from the `mode` topic. Both indices are the **controller's** vocabularies, not ours, and carry **no constants** for the same reason `SetPolicyMode.mode` does not — see the note there. It carries **no freshness field**, so `0 / 0` before the first sample is indistinguishable from a real `PPO / Stand`. `safety_state` is the exception on both counts: it is `syncai_driver_manager`'s own safety lock (from its latched `safety_locked` topic), not something the controller reports. |
 
 `mode` is still a placeholder: `syncai_robot_state` hardcodes `AUTO` (`{TODO}` in
 the source), and the REST layer surfaces it.

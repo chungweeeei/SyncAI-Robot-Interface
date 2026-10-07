@@ -80,3 +80,26 @@ int32 policy_state
 # not assume the absence of MPC. Resolving this is a hardware-observation task:
 # put the robot in MPC and read the value.
 int32 motion_state
+
+# Whether syncai_driver_manager's software safety lock is engaged, copied from
+# its `safety_locked` topic (std_msgs/Bool, reliable + TRANSIENT_LOCAL depth 1).
+# true = engaged: the driver has sent LieDown (MODE X) and `set_motion_key`
+# refuses everything except ESTOP until `reset_safety` releases it.
+#
+# THIS ONE IS OURS, NOT THE CONTROLLER'S, unlike the two fields above. The lock
+# lives in syncai_driver_manager; the gait controller knows nothing about it and
+# does not report it. It sits in this message anyway because it answers the same
+# question the other two do -- "what will the robot actually do with a motion
+# command right now" -- and a consumer reading low_level_mode is the one that
+# needs it. Note also what it does NOT gate: cmd_vel and set_policy_mode pass
+# through an engaged lock (see the driver_manager's SafetyLock docs).
+#
+# UNLIKE `mode`, THE SOURCE IS LATCHED: the driver publishes the released state
+# once at startup and then on every change, so a late subscriber still gets the
+# current value. `false` before the first sample (driver_manager not up) is still
+# indistinguishable from a genuine "released", though, because syncai_robot_state
+# republishes whatever it last held and this message has no freshness field.
+#
+# Nothing triggers the lock yet (low battery and JOINT_TEMP overheat are both
+# TODO in syncai_driver_manager), so in practice this reads false today.
+bool safety_state
