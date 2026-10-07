@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 15 messages, 15 services, 1
+The stack's shared ROS 2 interface definitions — 15 messages, 16 services, 1
 action. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
 
 Everything here exists because two or more packages need to agree on a wire
@@ -101,10 +101,15 @@ interleaves them, and every per-robot consumer here is scoped to exactly one.
 | `RobotBatteryStatus` | `battery_percentage` | 0–100, already scaled from `sensor_msgs/BatteryState.percentage` |
 | `RobotMode` | `MAINTENANCE=0`, `MANUAL=1`, `AUTO=2` | **Constants only** — no data fields. Never published on its own; it exists so `RobotState.mode` has named values. |
 | `RobotStatus` | `UNINITIALIZED=0`, `IDLE=1`, `RUNNING=2`, `WARNING=3`, `ERROR=4`, `CHARGING=5` | Same pattern, for `state`. `UNINITIALIZED` holds `0` on purpose, so a default-constructed message does not claim to be `IDLE`. |
-| `RobotLowLevelMode` | `policy_state`, `motion_state`, `safety_state` | The gait controller's own state machine, from the `mode` topic. Both indices are the **controller's** vocabularies, not ours, and carry **no constants** for the same reason `SetPolicyMode.mode` does not — see the note there. It carries **no freshness field**, so `0 / 0` before the first sample is indistinguishable from a real `PPO / Stand`. `safety_state` is the exception on both counts: it is `syncai_driver_manager`'s own safety lock (from its latched `safety_locked` topic), not something the controller reports. |
+| `RobotLowLevelMode` | `policy_state`, `motion_state`, `safety_state` | The gait controller's own state machine, from the `mode` topic. Both indices are the **controller's** vocabularies, not ours, and carry **no constants** for the same reason `SetPolicyMode.mode` does not — see the note there. It carries **no freshness field**, so `0 / 0` before the first sample is indistinguishable from a real `PPO / Stand`. `safety_state` is the exception on both counts: it is `syncai_driver_manager`'s own safety lock (from its latched `safety_locked` topic), not something the controller reports. It reads `false` in practice today: the lock's `trigger` has no call site outside tests (the overheat monitor that would engage it is still a TODO), so do not treat `false` as a checked safety signal. |
 
-`mode` is still a placeholder: `syncai_robot_state` hardcodes `AUTO` (`{TODO}` in
-the source), and the REST layer surfaces it.
+`mode` is which byobu session is live: `syncai_robot_state` polls
+`syncai_sys_manager`'s `get_mode` (`mode_poll_rate`, 1 Hz, at most one request in
+flight) rather than subscribing, because sys_manager derives the mode on demand
+and publishes no topic. It starts at `AUTO` until the first answer, so in a
+mapping session it reads `AUTO` for up to one poll period before settling on
+`MANUAL`. It used to be hardcoded `AUTO`, which made the console's mode chip
+wrong for every mapping run. The REST layer surfaces it.
 
 `state` carries three of the six values, evaluated most-severe-first by
 `syncai_robot_state`:
@@ -215,6 +220,7 @@ a conveyor's `live_info.phase`.
 | `SetSpeedScale` | six `float64` scales | `success` | `syncai_driver_manager` on `set_speed_scale` |
 | `SwitchMode` | `uint8 mode` | `success`, `message` | `syncai_sys_manager` on `switch_mode` |
 | `GetMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` on `get_mode` |
+| `RestartMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` on `restart_mode` |
 | `ResetLIO` | *(empty)* | `success`, `message`, `float64 last_odom_time` | `syncai_pointlio` on `pointlio/reset` |
 | `SaveMaps` | `file_path`, `save_patches` | `success`, `message` | `syncai_mapping` on `pgo/save_maps` |
 | `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` on `pgo/reset_mapping` |
@@ -296,6 +302,15 @@ Notes:
   namespace — `<robot_id>/relocalize`, not `<robot_id>/localizer/relocalize`
   as these docs said until the localizer was ported from `SyncAI-Fast-LIO2`
   (whose `interface` package they came from).
+- **`RestartMode` rebuilds the live mode's session; it takes no mode.** It
+  exists because `SwitchMode` treats "switch to the live mode" as a no-op,
+  which left no way to restart a wedged stack short of bouncing through the
+  other mode. The mode is whatever `GetMode` would report, so the request is
+  empty, and the response says what is live afterwards. It is refused in
+  MAINTENANCE, with both sessions up, and **always** in MANUAL — `pgo_node`
+  holds an unsaved map in RAM and nothing in sys_manager can tell whether it
+  was saved — so in practice it restarts AUTO only. The backend does not call
+  it today.
 
 The `success`/`message` pair is the convention for everything here: callers check
 `success` and surface `message` verbatim (the backend maps a failed wifi connect
@@ -313,7 +328,7 @@ went the other way: `RobotWorkflow` in `syncai_backend` sequences steps itself
 and dispatches `MOVE` to `nav2_msgs/NavigateToPose` and `ARTIFACT` to the
 artifact REST API, with the behavior-tree route reserved for a future need for
 tick-level parallelism. The definition is kept because that need may still
-arrive; its comments are in Chinese, unlike the rest of the package.
+arrive. Its comments were in Chinese until the 2026-09 translation pass.
 
 ## Depending on this package
 
@@ -390,8 +405,10 @@ ros2 interface list | grep syncai_common
   because the backend's telemetry WebSocket needs sub-second ordering at 20 Hz).
   So a `MotorStates`' unit depends on where you found it. Each `.msg` states its
   unit — check it before doing arithmetic across two of them.
-- **`RobotState.timestamp` cannot order samples.** Whole seconds at a 10 Hz
-  publish rate means ten consecutive messages carry the same value. It is a wall
+- **`RobotState.timestamp` cannot order samples.** Whole seconds cannot
+  order samples at the code-default 10 Hz (ten consecutive messages carry the same
+  value), and at the shipped 1 Hz timer jitter can still give two neighbours the same
+  second. It is a wall
   clock for display, and `motor_status.timestamp` is no better now that it is
   seconds too — subscribe `motor_states` directly for sub-second resolution.
 - **No message carries a `std_msgs/Header`.** Timestamps are bare `uint64`
