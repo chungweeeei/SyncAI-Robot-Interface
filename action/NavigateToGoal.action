@@ -1,0 +1,76 @@
+# Navigate the robot to a pose, and say WHY when it cannot.
+#
+# Served by task_runner (syncai_task_runner, SyncAI-Robot-Workspace) on the
+# relative name `navigate_to_goal` -> <robot_id>/navigate_to_goal, next to the
+# UNCHANGED nav2_msgs/NavigateToPose on <robot_id>/navigate_to_pose: same
+# navigator code, same behavior tree (move.xml), same preemption rules; only
+# the result and one feedback field differ. Added 2026-10 because the
+# backend's MOVE step got ABORTED with an empty std_msgs/Empty result and
+# could not tell the operator whether the robot failed to plan or failed to
+# drive. The backend migrates from NavigateToPose at its own pace; the old
+# action stays until it has.
+#
+# Field NAMES mirror nav2's NavigateToPose on purpose (goal.pose,
+# goal.behavior_tree, the five feedback fields): one navigator template in
+# task_runner serves both actions, and it compiles only because the member
+# names agree. Rename a field here and that template needs a trait.
+
+# Target pose, in the navigator's global_frame (map).
+geometry_msgs/PoseStamped pose
+# Absolute path of a BT XML to tick instead of the default move.xml; empty =
+# the default. A new goal sent while one runs is accepted in place (no
+# restart, no replan cycle) only if it names the same tree; otherwise it is
+# terminated and the running goal continues.
+string behavior_tree
+---
+# Which stage failed, coarsely. Meaningful ONLY with status ABORTED;
+# SUCCEEDED and CANCELED carry NONE.
+#
+# ABORTED + NONE is not a navigation failure. It means the goal was
+# superseded by a newer goal on this action (preempted in place: the old goal
+# is aborted with a default result), or was rejected before the tree ran --
+# the other navigator in task_runner was busy (navigate_to_pose and
+# navigate_to_goal share one robot, so one navigation at a time), or the
+# requested behavior_tree file could not be loaded. The task_runner log has
+# which.
+#
+# Layout, nav2 Iron's convention, so finer codes slot in without renumbering:
+#   0        none
+#   1..99    navigator / tree level
+#   100..199 the path-following branch (FollowPath -> syncai_controller)
+#   200..299 the planning branch (ComputePathToPose -> syncai_planner)
+# The two branch constants are their range's base. Humble's nav2_msgs
+# results carry no reason, so today the branch is all the stack knows; when
+# a finer reason exists it becomes base + n (Iron: 104 patience exceeded,
+# 207 no valid path, ...) and a client that switches on the hundreds keeps
+# working. The bases are a contract between this file and the backend:
+# never renumber them.
+uint16 NONE=0
+# The tree failed without a node reporting: an exception inside the tree, or
+# a branch whose server never acknowledged the goal (error_msg names it).
+uint16 UNKNOWN=1
+# The path-following branch failed the tree, after move.xml's own retries:
+# blocked with no detour, no progress for movement_time_allowance, or the
+# robot pose lost for longer than failure_tolerance.
+uint16 FOLLOW_PATH_FAILED=100
+# The planning branch failed the tree: no route, start or goal inside an
+# obstacle / keepout zone, or a TF failure -- twice, since the tree clears
+# the global costmap and retries once before giving up.
+uint16 PLAN_FAILED=200
+
+uint16 error_code
+# Human-readable, written for the operator console: a stage sentence with
+# the BT node's detail in parentheses. Empty when error_code is NONE.
+string error_msg
+---
+# nav2's five fields, same names, plus one.
+geometry_msgs/PoseStamped current_pose
+builtin_interfaces/Duration navigation_time
+builtin_interfaces/Duration estimated_time_remaining
+int16 number_of_recoveries
+float32 distance_remaining
+# Plans made for this goal beyond the first: 0 while the first path is still
+# good. Since 2026-10 move.xml plans only when the path is blocked or the
+# goal changed, so this counts detours, which is what an operator watching a
+# stalled robot wants to know. Resets with every (pre-empted) goal.
+uint16 number_of_replans

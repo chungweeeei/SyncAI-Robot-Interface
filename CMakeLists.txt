@@ -7,9 +7,11 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-# MappingStatus.stamp is a builtin_interfaces/Time -- the first field here of
-# another package's type, so the DEPENDENCIES entry below is now load-bearing.
+# MappingStatus.stamp is a builtin_interfaces/Time and NavigateToGoal carries
+# geometry_msgs/PoseStamped (goal and feedback) -- the fields here of another
+# package's type, so the DEPENDENCIES entry below is load-bearing for both.
 find_package(builtin_interfaces REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ArtifactState.msg"
@@ -44,7 +46,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/Relocalize.srv"
   "srv/IsValid.srv"
   "action/ExecuteTask.action"
-  DEPENDENCIES builtin_interfaces
+  "action/NavigateToGoal.action"
+  DEPENDENCIES builtin_interfaces geometry_msgs
 )
 
 ament_export_dependencies(rosidl_default_runtime)

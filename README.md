@@ -1,7 +1,7 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 15 messages, 16 services, 1
-action. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
+The stack's shared ROS 2 interface definitions — 15 messages, 16 services, 2
+actions. No code, no nodes: `rosidl_generate_interfaces` and nothing else.
 
 Everything here exists because two or more packages need to agree on a wire
 format. Interfaces used by exactly one package generally stay in that package;
@@ -19,6 +19,7 @@ syncai_sys_manager ────────────────────�
 syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid──────► syncai_localizer (localizer_node)
+syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose)
 ```
 
 ## This repository
@@ -29,9 +30,10 @@ in 2026-09 with `git subtree split`, so the history below predates the split.
 
 It is the one thing every other repo has to agree on, which is exactly why it is
 its own repo: a consumer imports *this*, not the whole workspace. It depends on
-nothing but `ament_cmake`, `rosidl_default_generators` and `builtin_interfaces`
-— no first-party package, no workspace path. Keep it that way; an interface
-package that needs one of its own consumers is no longer an interface.
+nothing but `ament_cmake`, `rosidl_default_generators`, `builtin_interfaces`
+and (since `NavigateToGoal`, 2026-10) `geometry_msgs` — no first-party
+package, no workspace path. Keep it that way; an interface package that needs
+one of its own consumers is no longer an interface.
 
 Consumers materialise it with vcstool, from their own root:
 
@@ -41,8 +43,9 @@ colcon build --packages-select syncai_common
 ```
 
 Known consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
-`syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping` and
-`syncai_localizer`, which serves `Relocalize` / `IsValid`. The localizer used
+`syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`,
+`syncai_localizer`, which serves `Relocalize` / `IsValid`, and
+`syncai_task_runner`, which serves `NavigateToGoal`. The localizer used
 to be the one consumer in a third repository (`SyncAI-Fast-LIO2`); it moved
 into the workspace in 2026-09, and nothing reads that fork any more. A change here is an ABI break for all of them — see
 **Gotchas** at the bottom, which is not boilerplate now that they rebuild
@@ -316,7 +319,42 @@ The `success`/`message` pair is the convention for everything here: callers chec
 `success` and surface `message` verbatim (the backend maps a failed wifi connect
 to HTTP 400 with that string as the detail).
 
-## Action
+## Actions
+
+### NavigateToGoal
+
+`nav2_msgs/NavigateToPose` with a reason. Goal `pose` (`PoseStamped`, in
+`map`) / `behavior_tree` (absolute XML path, empty = the default `move.xml`);
+result `error_code` / `error_msg`; feedback nav2's five fields (`current_pose`,
+`navigation_time`, `estimated_time_remaining`, `number_of_recoveries`,
+`distance_remaining`) plus `number_of_replans` (plans beyond the first — the
+detours, since the tree plans only when the path is blocked).
+
+Served by `syncai_task_runner` on `navigate_to_goal` (`<robot_id>/navigate_to_goal`),
+next to the **unchanged** `nav2_msgs/NavigateToPose` on `navigate_to_pose`:
+same navigator code, same tree, same preemption rules. Added 2026-10 because
+the backend's MOVE step got `ABORTED` with an empty result and could not tell
+the operator whether the robot failed to plan or failed to drive. The backend
+still sends the nav2 action; it migrates at its own pace, and the old one is
+removed only after that.
+
+| `error_code` | Meaning |
+|---|---|
+| `NONE` = 0 | Also what `SUCCEEDED` and `CANCELED` carry. **`ABORTED` + `NONE` is not a navigation failure**: the goal was superseded by a newer goal on this action (a preempt aborts the old goal with a default result), or rejected before the tree ran — the other navigator was busy, or the `behavior_tree` file could not be loaded |
+| `UNKNOWN` = 1 | The tree failed without a node reporting: an exception, or a server that never acknowledged the goal (`error_msg` names it). 1–99 is the navigator / tree range |
+| `FOLLOW_PATH_FAILED` = 100 | The path-following branch failed the tree after its retries: blocked with no detour, no progress, or the robot pose lost. 1xx is the controller's range |
+| `PLAN_FAILED` = 200 | The planning branch failed the tree (twice, after a global-costmap clear): no route, start or goal in an obstacle / keepout zone, or TF. 2xx is the planner's range |
+
+The ranges follow nav2 Iron's, so finer codes slot in as `base + n` (Iron's
+104 patience exceeded, 207 no valid path, …) once the planner's and
+controller's own results carry a reason — Humble's `nav2_msgs` do not, so
+today the branch is all the stack knows. A client that switches on the
+hundreds keeps working across that; the two bases are a contract and are
+never renumbered. The field names mirror nav2's on purpose: one navigator
+template in `syncai_task_runner` serves both actions and compiles only because
+the member names agree.
+
+### ExecuteTask
 
 `ExecuteTask` — goal `uuid` / `timestamp` / `behavior_tree` (an **inline BT XML
 string**, not a file path), result `success` / `message` / `finished_timestamp`,
@@ -353,6 +391,7 @@ Python — the generated module is importable once the workspace is sourced:
 ```python
 from syncai_common.msg import RobotState, RobotMode
 from syncai_common.srv import ScanWifiNetworks, ConnectWifiNetwork, SetMotionKey
+from syncai_common.action import NavigateToGoal
 ```
 
 Constant-only messages are accessed as class attributes, never instantiated:
@@ -394,7 +433,9 @@ ros2 interface list | grep syncai_common
   Constants are compiled into consumers, so the wire format is unchanged and
   nothing fails loudly — but `state` values in bags recorded before the change
   now decode to the wrong name. It was safe to do because no consumer read the
-  numeric value; that will not be true forever.
+  numeric value; that will not be true forever. `NavigateToGoal`'s
+  `FOLLOW_PATH_FAILED = 100` / `PLAN_FAILED = 200` are the opposite case: the
+  backend is meant to switch on the hundreds, so those two bases are fixed.
 - **Timestamp units are not uniform.** `ArtifactState` and `ExecuteTask` are in
   milliseconds; `RobotState.timestamp` is in **seconds** (`now().seconds()` cast
   to `uint64`), because it is passed through verbatim to
@@ -415,7 +456,8 @@ ros2 interface list | grep syncai_common
   fields — except `MappingStatus.stamp`, a `builtin_interfaces/Time`, the one
   field here of another package's type — and there is no `frame_id` anywhere:
   these are status messages, not sensor data to be transformed. Anything needing TF uses a `geometry_msgs` type
-  instead. `RobotLowLevelMode` is the extreme case: its upstream
+  instead — which is what `NavigateToGoal`'s `pose` / `current_pose`
+  (`PoseStamped`, header and all) are. `RobotLowLevelMode` is the extreme case: its upstream
   `std_msgs/Int32MultiArray` has no header either and the telemetry link carries no
   clock, so there is no timestamp available anywhere on that path — which is why
   that message can say what the controller reports but never when.

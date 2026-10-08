@@ -12,6 +12,8 @@
 
   <!-- MappingStatus.stamp is a builtin_interfaces/Time. -->
   <depend>builtin_interfaces</depend>
+  <!-- NavigateToGoal's goal pose and feedback current_pose are PoseStamped. -->
+  <depend>geometry_msgs</depend>
 
   <exec_depend>rosidl_default_runtime</exec_depend>
 
