@@ -8,7 +8,7 @@
 # note above motor_status.
 #
 # SECONDS since epoch, stamped by the publishing node. Note the unit: the other
-# timestamped interfaces here (ArtifactState, ExecuteTask) use milliseconds.
+# timestamped interface here (ExecuteTask) uses milliseconds.
 # Kept in seconds because it is passed through verbatim to
 # GET /api/v1/robot/state, whose consumers already treat it as seconds.
 #
