@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 15 messages, 16 services, 2
+The stack's shared ROS 2 interface definitions — 14 messages, 16 services, 2
 actions. No code, no nodes: `rosidl_generate_interfaces` only.
 
 An interface lives here only when two or more packages share it; single-package
@@ -162,27 +162,6 @@ builtin_interfaces/Time stamp
 `start_mapping`: IDLE → MAPPING. Successful `save_maps`: MAPPING → IDLE.
 `reset_mapping`: MAPPING → MAPPING. `IDLE = 0` so a default-constructed message
 reads as the safe state.
-
-### ArtifactState
-
-**No publisher or subscriber in this workspace.** It mirrors the interface of
-the separate artifact stack (`SyncAI-Artifact-Workspace`) for a future
-ROS-side artifact monitor.
-
-```
-uint64 timestamp     # ms since epoch
-string artifact_id   # "conveyor_0", "door_1"
-string type          # live_info discriminator: "conveyor", "door", ...
-bool   connected     # transport session (e.g. modbus tcp) is up
-bool   stale         # connected but the device stopped updating
-uint16 error_code    # device-reported, 0 = ok
-string live_info     # JSON of DECODED values, never raw registers
-```
-
-The four health fields are uniform so a monitor can alarm without parsing;
-everything type-specific goes in `live_info`, keyed by `type`. A conveyor's
-`live_info.phase` is the backend's `ConveyorPhase`
-(`belt`/`handoff`/`carried`/`dropped`).
 
 ## Services
 
@@ -363,7 +342,7 @@ ros2 interface list | grep syncai_common
   (as happened when `RobotStatus` gained `UNINITIALIZED = 0`).
   `NavigateToGoal`'s `100` / `200` bases are fixed because the backend switches
   on them.
-- **Timestamp units differ.** `ArtifactState` and `ExecuteTask`: milliseconds.
+- **Timestamp units differ.** `ExecuteTask`: milliseconds.
   `RobotState.timestamp` and `motor_status.timestamp`: **seconds** (the
   frontend multiplies by 1000). The `motor_states` topic: **nanoseconds**
   (the telemetry WebSocket needs sub-second ordering at 20 Hz). Each `.msg`
