@@ -14,7 +14,6 @@ find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/ArtifactState.msg"
   "msg/IMUState.msg"
   "msg/MappingStatus.msg"
   "msg/MotorState.msg"
