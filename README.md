@@ -23,9 +23,6 @@ syncai_backend ──NavigateToGoal────────────► synca
 
 ## This repository
 
-The package lives at the repo **root**, like `SyncAI-Robot-Backend`. It was
-split out of `SyncAI-Robot-Workspace` in 2026-09 with `git subtree split`.
-
 It is its own repo so consumers import *this*, not the whole workspace. It
 depends only on `ament_cmake`, `rosidl_default_generators`,
 `builtin_interfaces` and `geometry_msgs` — no first-party package. Keep it that
