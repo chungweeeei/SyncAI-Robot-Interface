@@ -74,3 +74,12 @@ float32 distance_remaining
 # goal changed, so this counts detours, which is what an operator watching a
 # stalled robot wants to know. Resets with every (pre-empted) goal.
 uint16 number_of_replans
+# What the navigator is doing right now, for the operator console: one
+# English sentence written by the behavior tree at each turn of move.xml --
+# planning, following the path, replanning because the path is blocked or the
+# goal changed, retrying after the planner or the controller gave up. Empty
+# only before the tree has started on the goal. Free text: a client shows it
+# and must not switch on it; the result's error_code is the machine-readable
+# surface. Without it the console could say only "running" for a goal that
+# was in fact detouring round a blocker or about to give up.
+string status_msg

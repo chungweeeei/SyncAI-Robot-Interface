@@ -328,7 +328,10 @@ to HTTP 400 with that string as the detail).
 result `error_code` / `error_msg`; feedback nav2's five fields (`current_pose`,
 `navigation_time`, `estimated_time_remaining`, `number_of_recoveries`,
 `distance_remaining`) plus `number_of_replans` (plans beyond the first — the
-detours, since the tree plans only when the path is blocked).
+detours, since the tree plans only when the path is blocked) and `status_msg`
+(one English sentence for the operator console saying what the navigator is
+doing right now — "Following the path", "Path blocked; replanning", … — free
+text, never to be switched on).
 
 Served by `syncai_task_runner` on `navigate_to_goal` (`<robot_id>/navigate_to_goal`),
 next to the **unchanged** `nav2_msgs/NavigateToPose` on `navigate_to_pose`:
