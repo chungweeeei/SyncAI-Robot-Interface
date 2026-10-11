@@ -19,6 +19,7 @@ syncai_sys_manager ────────────────────�
 syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid──────► syncai_localizer (localizer_node)
+(not called yet)  AutoLocalize ─────────────► syncai_localizer (localizer_node)
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose)
 ```
 
@@ -44,7 +45,7 @@ colcon build --packages-select syncai_common
 
 Known consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
 `syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`,
-`syncai_localizer`, which serves `Relocalize` / `IsValid`, and
+`syncai_localizer`, which serves `Relocalize` / `IsValid` / `AutoLocalize`, and
 `syncai_task_runner`, which serves `NavigateToGoal`. The localizer used
 to be the one consumer in a third repository (`SyncAI-Fast-LIO2`); it moved
 into the workspace in 2026-09, and nothing reads that fork any more. A change here is an ABI break for all of them — see
@@ -232,6 +233,7 @@ a conveyor's `live_info.phase`.
 | `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) on `hba/save_poses` |
 | `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` on `relocalize` (bare: `<robot_id>/relocalize`) |
 | `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` on `relocalize_check` |
+| `AutoLocalize` | *(empty)* | `success`, `message`, `x`, `y`, `z`, `yaw`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` on `auto_localize` |
 
 Notes:
 
@@ -305,6 +307,14 @@ Notes:
   namespace — `<robot_id>/relocalize`, not `<robot_id>/localizer/relocalize`
   as these docs said until the localizer was ported from `SyncAI-Fast-LIO2`
   (whose `interface` package they came from).
+- **`AutoLocalize` success is a result, not a receipt** — the opposite of
+  `Relocalize`. It is the kidnap recovery: no hint, a global search over the
+  map's `poses.txt` keyframes × a yaw sweep, then a wait until the localizer's
+  timer has registered against the pose found. It blocks for up to the
+  node's two deadlines (search + converge, 15 s by default), fails rather
+  than guesses on an ambiguous match, and on any failure leaves localization
+  as it was. Needs a map saved with `save_patches`. New in 2026-10; nothing
+  calls it yet.
 - **`RestartMode` rebuilds the live mode's session; it takes no mode.** It
   exists because `SwitchMode` treats "switch to the live mode" as a no-op,
   which left no way to restart a wedged stack short of bouncing through the

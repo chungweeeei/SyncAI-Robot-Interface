@@ -1,0 +1,49 @@
+# Find the robot on the currently loaded map with no pose hint -- the
+# recovery for a kidnapped robot (carried somewhere, booted away from its
+# [initial_pose], or localization lost). Served by localizer_node
+# (the workspace's syncai_localizer) on the relative name `auto_localize`, in
+# the bare robot_id namespace, so it lands on <robot_id>/auto_localize, next to
+# relocalize / relocalize_check. New in 2026-10; the backend does not call it
+# yet.
+#
+# SUCCESS IS A RESULT, NOT A RECEIPT -- the opposite of Relocalize. The call
+# blocks until either:
+#   1. a global search over the map's poses.txt keyframes x a yaw sweep,
+#      scored coarse-to-fine with GICP and checked for ambiguity, has found a
+#      pose, AND
+#   2. the localizer's own timer, handed that pose as its next guess, has
+#      registered against a fresh scan (what IsValid / relocalize_check
+#      reports as valid right after).
+# Each half has its own deadline (the node's auto_loc.search_timeout_sec and
+# auto_loc.converge_timeout_sec, 10 s + 5 s by default), so a caller's client
+# timeout must exceed their sum. A failure in either half leaves localization
+# as it was: the candidate is withdrawn and the timer goes back to its
+# previous offset rather than retrying a guess that did not converge.
+#
+# It only works on a map saved with save_patches (the keyframe poses in
+# map/<name>/poses.txt are the candidate positions), and it fails rather than
+# guesses when two distinct poses score alike (a symmetric corridor). If the
+# kidnap made Point-LIO itself diverge, reset it first (pointlio/reset, robot
+# stationary); this service does not.
+#
+# No request fields: the whole point is that no hint is needed.
+---
+bool success
+# Why it failed (no map, no poses.txt, ambiguous, timed out, did not
+# converge), or a summary of the match.
+string message
+# The pose found, map frame, at the scan the search used. Angles in radians.
+# Filled on success, and also on a convergence failure (the candidate that
+# did not converge), for diagnosis; zero otherwise.
+float32 x
+float32 y
+float32 z
+float32 yaw
+# Refine-stage pcl::Registration::getFitnessScore() of the winner (mean
+# squared nearest-neighbour distance, m^2).
+float32 fitness
+# Fraction of the winner's refine-resolution scan points within the inlier
+# distance of the map after alignment -- the search's acceptance gate.
+float32 inlier_ratio
+# How many (position, yaw) candidates the coarse stage scored.
+int32 candidates
