@@ -44,6 +44,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SavePoses.srv"
   "srv/Relocalize.srv"
   "srv/IsValid.srv"
+  "srv/AutoLocalize.srv"
   "action/ExecuteTask.action"
   "action/NavigateToGoal.action"
   DEPENDENCIES builtin_interfaces geometry_msgs

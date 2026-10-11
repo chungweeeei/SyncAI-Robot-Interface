@@ -18,6 +18,7 @@ syncai_sys_manager ────────────────────�
 syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid──────► syncai_localizer (localizer_node)
+(not called yet)  AutoLocalize ─────────────► syncai_localizer (localizer_node)
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose)
 ```
 
@@ -183,6 +184,7 @@ reads as the safe state.
 | `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) |
 | `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` (`localizer_node`) |
 | `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` (`localizer_node`) |
+| `AutoLocalize` | *(empty)* | `success`, `message`, `x`, `y`, `z`, `yaw`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
 
 Notes:
 
@@ -226,6 +228,13 @@ Notes:
   probe). The backend follows `Relocalize` with an `initialpose` publish — the
   tilted lidar mount means a flat guess never converges. Both are under the
   bare robot_id namespace (`<robot_id>/relocalize`).
+- **`AutoLocalize` success is a result, not a receipt** — the opposite of
+  `Relocalize`. The kidnap recovery: no hint, a global search over the map's
+  `poses.txt` keyframes × a yaw sweep, then a wait until the localizer's timer
+  has registered against the pose found. Blocks up to the node's two deadlines
+  (15 s by default), fails rather than guesses on an ambiguous match, and on
+  any failure leaves localization as it was. Needs a map saved with
+  `save_patches`. The backend does not call it yet.
 - **`RestartMode` restarts the live mode's session.** `SwitchMode` to the live
   mode is a no-op, so this is the only way to restart a wedged stack. Refused
   in MAINTENANCE, with both sessions up, and **always** in MANUAL (`pgo_node`
