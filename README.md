@@ -167,22 +167,22 @@ reads as the safe state.
 
 | Service | Request | Response | Served by |
 |---|---|---|---|
-| `ScanWifiNetworks` | *(empty)* | `success`, `message`, `WifiNetwork[] networks` | `syncai_sys_manager` on `scan_wifi` |
-| `ConnectWifiNetwork` | `ssid`, `password` | `success`, `message` | `syncai_sys_manager` on `connect_wifi` |
-| `SetMotionKey` | `key` | `success`, `message` | `syncai_driver_manager` on `set_motion_key` |
-| `SetPolicyMode` | `uint8 mode` | `success`, `message` | `syncai_driver_manager` on `set_policy_mode` |
-| `SetSpeedScale` | six `float64` scales | `success` | `syncai_driver_manager` on `set_speed_scale` |
-| `SwitchMode` | `uint8 mode` | `success`, `message` | `syncai_sys_manager` on `switch_mode` |
-| `GetMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` on `get_mode` |
-| `RestartMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` on `restart_mode` |
-| `ResetLIO` | *(empty)* | `success`, `message`, `float64 last_odom_time` | `syncai_pointlio` on `pointlio/reset` |
-| `SaveMaps` | `file_path`, `save_patches` | `success`, `message` | `syncai_mapping` on `pgo/save_maps` |
-| `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` on `pgo/reset_mapping` |
-| `StartMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time` | `syncai_mapping` on `pgo/start_mapping` |
-| `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`, offline, by hand) on `hba/refine_map` |
-| `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) on `hba/save_poses` |
-| `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` on `relocalize` (bare: `<robot_id>/relocalize`) |
-| `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` on `relocalize_check` |
+| `ScanWifiNetworks` | *(empty)* | `success`, `message`, `WifiNetwork[] networks` | `syncai_sys_manager` |
+| `ConnectWifiNetwork` | `ssid`, `password` | `success`, `message` | `syncai_sys_manager` |
+| `SetMotionKey` | `key` | `success`, `message` | `syncai_driver_manager` |
+| `SetPolicyMode` | `uint8 mode` | `success`, `message` | `syncai_driver_manager` |
+| `SetSpeedScale` | six `float64` scales | `success` | `syncai_driver_manager` |
+| `SwitchMode` | `uint8 mode` | `success`, `message` | `syncai_sys_manager` |
+| `GetMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` |
+| `RestartMode` | *(empty)* | `success`, `message`, `uint8 mode`, `string session` | `syncai_sys_manager` |
+| `ResetLIO` | *(empty)* | `success`, `message`, `float64 last_odom_time` | `syncai_pointlio` (`pointlio_node`) |
+| `SaveMaps` | `file_path`, `save_patches` | `success`, `message` | `syncai_mapping` (`pgo_node`) |
+| `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` (`pgo_node`) |
+| `StartMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time` | `syncai_mapping` (`pgo_node`) |
+| `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`) |
+| `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) |
+| `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` (`localizer_node`) |
+| `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` (`localizer_node`) |
 
 Notes:
 
