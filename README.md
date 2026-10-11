@@ -17,8 +17,7 @@ syncai_sys_manager ────────────────────�
 
 syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
-syncai_backend ──Relocalize / IsValid──────► syncai_localizer (localizer_node)
-(not called yet)  AutoLocalize ─────────────► syncai_localizer (localizer_node)
+syncai_backend ──Relocalize / IsValid / AutoLocalize──► syncai_localizer (localizer_node)
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose)
 ```
 

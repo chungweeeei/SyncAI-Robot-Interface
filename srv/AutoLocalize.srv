@@ -3,8 +3,8 @@
 # [initial_pose], or localization lost). Served by localizer_node
 # (the workspace's syncai_localizer) on the relative name `auto_localize`, in
 # the bare robot_id namespace, so it lands on <robot_id>/auto_localize, next to
-# relocalize / relocalize_check. New in 2026-10; the backend does not call it
-# yet.
+# relocalize / relocalize_check. New in 2026-10; the backend calls it behind
+# POST /api/v1/localization/auto, with a 30 s client timeout.
 #
 # SUCCESS IS A RESULT, NOT A RECEIPT -- the opposite of Relocalize. The call
 # blocks until either:
