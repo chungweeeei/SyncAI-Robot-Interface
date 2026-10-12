@@ -124,6 +124,7 @@ flux.
 | Message | Fields | Used by |
 |---|---|---|
 | `WifiNetwork` | `bssid`, `ssid`, `rssi` | A scan result, returned by `ScanWifiNetworks`. |
+| `WifiConnection` | `uuid`, `name`, `ssid`, `active`, `int64 last_used` | A saved WiFi network, returned by `ListWifiConnections`. `last_used` is unix seconds, 0 for never. |
 | `WifiStatus` | `bssid`, `ssid`, `rssi`, `ip_address`, `mac_address` | Published at 1 Hz on `wifi_status` by `syncai_sys_manager`; consumed by `syncai_robot_state`. |
 
 `rssi` is `int8` dBm (roughly −100…0).
@@ -169,6 +170,9 @@ reads as the safe state.
 |---|---|---|---|
 | `ScanWifiNetworks` | *(empty)* | `success`, `message`, `WifiNetwork[] networks` | `syncai_sys_manager` |
 | `ConnectWifiNetwork` | `ssid`, `password` | `success`, `message` | `syncai_sys_manager` |
+| `ListWifiConnections` | *(empty)* | `success`, `message`, `WifiConnection[] connections` | `syncai_sys_manager` |
+| `ActivateWifiConnection` | `uuid` | `success`, `message`, `ssid` | `syncai_sys_manager` |
+| `DeleteWifiConnection` | `uuid` | `success`, `message` | `syncai_sys_manager` |
 | `SetMotionKey` | `key` | `success`, `message` | `syncai_driver_manager` |
 | `SetPolicyMode` | `uint8 mode` | `success`, `message` | `syncai_driver_manager` |
 | `SetSpeedScale` | six `float64` scales | `success` | `syncai_driver_manager` |
