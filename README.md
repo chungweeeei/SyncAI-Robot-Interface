@@ -238,7 +238,8 @@ Notes:
   has registered against the pose found. Blocks up to the node's two deadlines
   (15 s by default), fails rather than guesses on an ambiguous match, and on
   any failure leaves localization as it was. Needs a map saved with
-  `save_patches`. The backend does not call it yet.
+  `save_patches`. The backend calls it behind `POST /api/v1/localization/auto`,
+  with a 30 s client timeout.
 - **`ResetOdometry` is `ResetLIO` for the nav session** — zero the odometry
   the way a wheeled robot resets its encoders, without losing the map pose.
   A bare `ResetLIO` there leaves the localizer's map → odom correction solved
