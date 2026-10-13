@@ -1,0 +1,71 @@
+# Zero the LIO odometry and carry the robot's map pose across the jump -- the
+# legged-robot counterpart of resetting a wheel encoder. Served by
+# localizer_node (the workspace's syncai_localizer) on the relative name
+# `reset_odometry`, in the bare robot_id namespace, so it lands on
+# <robot_id>/reset_odometry, next to relocalize / auto_localize. New in
+# 2026-10; nothing calls it yet.
+#
+# WHY IT IS NOT JUST pointlio/reset. ResetLIO restarts Point-LIO with its odom
+# origin wherever the robot stands, but the localizer's map -> pointlio_odom
+# correction was solved against the OLD origin: after a bare ResetLIO the
+# localizer's next ICP guess is that old correction applied to an identity
+# odom pose, which has nothing to do with where the robot is, and it never
+# converges. AutoLocalize does not rescue it either while its scan window still
+# holds scans posed by the diverged solution. This service does the whole
+# sequence in one place: it calls pointlio/reset, drops every scan and odom
+# sample of the old run (the ResetLIO.last_odom_time gate), seeds the map pose
+# of the new run, and waits for the localizer's own registration to confirm it.
+#
+# The seed, in order of preference:
+#   1. use_hint: x / y / yaw below (map frame) -- an operator's click on the
+#      gridmap. z, roll and pitch are never taken from the request: z comes from
+#      the last trusted registration, roll / pitch from the new run's own
+#      gravity alignment (a flat guess never converges on the tilted mount; see
+#      Relocalize's note on initialpose).
+#   2. otherwise the localizer's last TRUSTED registration: the last ICP result
+#      that converged while the odometry it was chained to moved at a plausible
+#      speed. A diverged Point-LIO can still drag one ICP round to "converged";
+#      the speed gate is what keeps that one out of the seed. If the robot
+#      moved after that registration (it usually did -- divergence tends to
+#      start with motion), the seed is off by that much, and step 3 is the net.
+#   3. global_fallback: when the seed does not converge, run AutoLocalize's
+#      hint-free search over the map's poses.txt keyframes, on scans of the new
+#      run only.
+#
+# THE ROBOT MUST BE STANDING STILL, for the whole call. Point-LIO re-runs its
+# static, gravity-aligning IMU initialisation (see ResetLIO); one done in
+# motion tilts the new odometry for the rest of the run, with no error
+# anywhere. Nothing here can enforce it; stop the robot (cancel navigation)
+# before calling.
+#
+# SUCCESS IS A RESULT, NOT A RECEIPT, like AutoLocalize. The call blocks for at
+# most the sum of the node's reset_odom.lio_reset_timeout_sec +
+# reset_odom.wait_lio_timeout_sec + reset_odom.converge_timeout_sec, plus
+# AutoLocalize's two deadlines when global_fallback is taken (2 + 10 + 5, + 15
+# s by default) -- a client timeout must exceed that. On failure the odometry
+# has still been reset (that step is not undone) and the map -> pointlio_odom
+# correction is left at the seed, so TF stays continuous; retry with a hint, or
+# publish initialpose.
+
+# Use x / y / yaw as the seed instead of the last trusted registration.
+bool use_hint
+# Map frame, metres / radians. Read only when use_hint is true.
+float32 x
+float32 y
+float32 yaw
+# When the seed does not converge, try the hint-free global search before
+# giving up.
+bool global_fallback
+---
+bool success
+# What happened at each step, or why it stopped.
+string message
+# Which seed the reported pose came from: "hint", "last_good" or "global".
+# Empty when the call stopped before seeding (no seed, or the LIO reset
+# itself failed).
+string method
+# The seeded (on failure) or converged (on success) map pose of the robot.
+# Angles in radians.
+float32 x
+float32 y
+float32 yaw

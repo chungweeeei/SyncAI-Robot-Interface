@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 14 messages, 16 services, 2
+The stack's shared ROS 2 interface definitions — 15 messages, 21 services, 2
 actions. No code, no nodes: `rosidl_generate_interfaces` only.
 
 An interface lives here only when two or more packages share it; single-package
@@ -17,7 +17,7 @@ syncai_sys_manager ────────────────────�
 
 syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
-syncai_backend ──Relocalize / IsValid / AutoLocalize──► syncai_localizer (localizer_node)
+syncai_backend ──Relocalize / IsValid / AutoLocalize / ResetOdometry──► syncai_localizer (localizer_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose)
 ```
 
@@ -188,6 +188,7 @@ reads as the safe state.
 | `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` (`localizer_node`) |
 | `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` (`localizer_node`) |
 | `AutoLocalize` | *(empty)* | `success`, `message`, `x`, `y`, `z`, `yaw`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
+| `ResetOdometry` | `bool use_hint`, `x`, `y`, `yaw` (`float32`, radians), `bool global_fallback` | `success`, `message`, `string method`, `x`, `y`, `yaw` (`float32`) | `syncai_localizer` (`localizer_node`) |
 
 Notes:
 
@@ -238,6 +239,16 @@ Notes:
   (15 s by default), fails rather than guesses on an ambiguous match, and on
   any failure leaves localization as it was. Needs a map saved with
   `save_patches`. The backend does not call it yet.
+- **`ResetOdometry` is `ResetLIO` for the nav session** — zero the odometry
+  the way a wheeled robot resets its encoders, without losing the map pose.
+  A bare `ResetLIO` there leaves the localizer's map → odom correction solved
+  against the old origin, so it never re-converges; `localizer_node` owns the
+  sequence instead: `ResetLIO`, drop everything at or before its
+  `last_odom_time`, seed the new run from the hint or the last trusted
+  registration, wait for its own registration, and optionally fall back to
+  `AutoLocalize`'s search. A result, not a receipt; blocks up to its
+  deadlines' sum (17 s, 32 s with the fallback, by default). **The robot must
+  be standing still**, as for every LIO reset. Nothing calls it yet.
 - **`RestartMode` restarts the live mode's session.** `SwitchMode` to the live
   mode is a no-op, so this is the only way to restart a wedged stack. Refused
   in MAINTENANCE, with both sessions up, and **always** in MANUAL (`pgo_node`

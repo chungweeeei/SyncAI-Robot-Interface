@@ -4,10 +4,13 @@
 #
 # Served by pointlio_node (`syncai_pointlio`, in SyncAI-Robot-Workspace) on the
 # relative name `reset`, so it lands on <robot_id>/pointlio/reset. Nobody calls
-# this directly in normal operation -- pgo_node's reset_mapping (`syncai_mapping`,
-# same workspace) owns the ordering and this is the second half of it. The other
-# half of that contract is ResetMapping.srv beside this file: the two are the
-# specification of the reset, and they read together. Both moved here from
+# this directly in normal operation; two nodes own the ordering around it, one
+# per session. In mapping, pgo_node's reset_mapping / start_mapping
+# (`syncai_mapping`, same workspace) -- the other half of that contract is
+# ResetMapping.srv beside this file: the two are the specification of the
+# reset, and they read together. In nav, localizer_node's reset_odometry
+# (`syncai_localizer`, ResetOdometry.srv), which gates on last_odom_time the
+# same way and re-seeds the map pose the reset would otherwise orphan. Both moved here from
 # SyncAI-Fast-LIO2's `interface` package in 2026-09, when pointlio and then pgo
 # were ported into the workspace.
 #
