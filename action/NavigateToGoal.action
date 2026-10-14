@@ -17,10 +17,14 @@
 
 # Target pose, in the navigator's global_frame (map).
 geometry_msgs/PoseStamped pose
-# Absolute path of a BT XML to tick instead of the default move.xml; empty =
-# the default. A new goal sent while one runs is accepted in place (no
-# restart, no replan cycle) only if it names the same tree; otherwise it is
-# terminated and the running goal continues.
+# Path of a BT XML to tick instead of the default move.xml; empty = the
+# default. Absolute, or (since 2026-10) a bare file name resolved against
+# task_runner's own behavior_trees/ directory: "dock.xml" and "undock.xml"
+# are the docking trees (see DockToPose.action), and for those `pose` is the
+# DOCK pose -- the trees derive the staging pose from it themselves. A new
+# goal sent while one runs is accepted in place (no restart, no replan
+# cycle) only if it names the same tree; otherwise it is terminated and the
+# running goal continues.
 string behavior_tree
 ---
 # Which stage failed, coarsely. Meaningful ONLY with status ABORTED;
@@ -39,7 +43,10 @@ string behavior_tree
 #   1..99    navigator / tree level
 #   100..199 the path-following branch (FollowPath -> syncai_controller)
 #   200..299 the planning branch (ComputePathToPose -> syncai_planner)
-# The two branch constants are their range's base. Humble's nav2_msgs
+#   300..399 the docking branch (dock.xml / undock.xml only: SetMotionKey ->
+#            syncai_driver_manager, DockToPose -> syncai_controller's
+#            dock_to_pose; DockToPose.action numbers its own reasons 301..)
+# The branch constants are their range's base. Humble's nav2_msgs
 # results carry no reason, so today the branch is all the stack knows; when
 # a finer reason exists it becomes base + n (Iron: 104 patience exceeded,
 # 207 no valid path, ...) and a client that switches on the hundreds keeps
@@ -57,6 +64,17 @@ uint16 FOLLOW_PATH_FAILED=100
 # obstacle / keepout zone, or a TF failure -- twice, since the tree clears
 # the global costmap and retries once before giving up.
 uint16 PLAN_FAILED=200
+# The docking branch of behavior_trees/dock.xml or undock.xml failed: the
+# gait controller refused a motion-mode switch (the driver's safety lock,
+# "LOCKED"), the dock pose was unusable (no orientation, staging distance
+# <= 0), or the dock approach / back-out aborted -- the controller's
+# DockToPose reason (transform, timeout, lost control) is in error_msg. The
+# tree restores RL locomotion before reporting this, so the robot is left in
+# the gait the step found it in. A dock goal can still end with PLAN_FAILED
+# / FOLLOW_PATH_FAILED: that is dock.xml's staging leg, i.e. the dock was
+# unreachable, not the dock itself. dock and undock share this base because
+# the backend knows which tree it sent; error_msg says approach or back-out.
+uint16 DOCK_FAILED=300
 
 uint16 error_code
 # Human-readable, written for the operator console: a stage sentence with

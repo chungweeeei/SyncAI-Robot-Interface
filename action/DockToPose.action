@@ -1,0 +1,101 @@
+# Drive the last metre onto (or off) a dock: a slow, precisely stopped
+# pose-to-pose approach with no path and no costmap. The robot is already in
+# front of the dock, roughly facing it, and the only job is to end ON the
+# dock pose -- or, for undocking, to back straight out to the staging pose.
+#
+# Served by controller_server (syncai_controller, SyncAI-Robot-Workspace) on
+# the relative name `dock_to_pose` -> <robot_id>/dock_to_pose, beside the
+# UNCHANGED nav2_msgs/FollowPath on <robot_id>/follow_path. Same process,
+# same local costmap node, one of the two at a time: a dock goal while a
+# path is being followed is CONTROLLER_BUSY. The controller behind it is a
+# syncai_controller::DockingController instance (Park & Kuipers' smooth
+# control law, a port of nav2's graceful / opennav_docking controller) with
+# its own tight goal checker, both picked by id below so a tree can A/B them.
+#
+# DIRECTION IS A CONTROLLER CONFIGURATION, NOT A GOAL FIELD. There is no
+# `backward` flag here and there will not be one: the controller plugin
+# interface (syncai_nav_core::Controller) carries a path and nothing else,
+# and nav2's convention is "one configuration, one controller id". The
+# params file loads the same plugin twice -- `Docking` (forward, rotates in
+# place first) and `Undocking` (allow_backward, no initial rotation) -- and
+# the control law reverses by itself when the target is behind the robot.
+# undock.xml sends controller_id "Undocking" with the staging pose as
+# dock_pose; dock.xml sends "Docking" with the dock pose.
+#
+# Called by the DockToPose BT node (syncai_behavior_tree) from the docking
+# trees, syncai_task_runner's behavior_trees/dock.xml and undock.xml. The
+# backend does NOT call this action: a dock or an undock is a NavigateToGoal
+# with behavior_tree = dock.xml / undock.xml, so one action and one
+# error_code surface cover every kind of goal. Added 2026-10.
+
+# Where base_link must end up, in any TF frame the controller can resolve
+# (the trees hand it the task's map-frame pose). The server transforms it
+# into its odom frame ONCE, at acceptance (and again on a preempt), and
+# tracks it there: odom is continuous and map is not, so a localization
+# correction mid-approach would otherwise move the target under a robot
+# that is 20 cm from it. TRANSFORM_FAILED if the lookup fails -- there is no
+# retry, since a missing map -> odom will not appear in the next 100 ms.
+geometry_msgs/PoseStamped dock_pose
+# Id in controller_server's controller_plugins; empty -> the server's
+# default_dock_controller_id ("Docking"). "Undocking" backs out instead.
+string controller_id
+# Id in controller_server's goal_checker_plugins; empty -> the server's
+# default_dock_goal_checker_id ("dock_goal_checker", 5 cm / 0.05 rad).
+string goal_checker_id
+# Seconds before the server gives up and aborts with TIMEOUT; <= 0 -> the
+# server's dock_approach_timeout (60). The approach is ~1 m at docking
+# speed, so a minute is "stuck", not "slow".
+float32 timeout
+---
+# Why the approach ended. Meaningful ONLY with status ABORTED; SUCCEEDED and
+# CANCELED carry NONE. ABORTED + NONE is "superseded or not started" (the
+# server aborts a preempted goal with a default result), the same convention
+# as NavigateToGoal -- the DockToPose BT node spells that case out in its
+# failure message.
+#
+# Layout: 3xx is the docking range, parallel to NavigateToGoal's 1xx (path
+# following) and 2xx (planning). NavigateToGoal.DOCK_FAILED = 300 is the
+# base a failed dock.xml / undock.xml reports to the backend; the codes here
+# are the finer reasons only this server knows, and sit at base + n so a
+# client that switches on the hundreds keeps working if they are ever passed
+# through. Never renumber them.
+uint16 NONE=0
+uint16 UNKNOWN=1
+# dock_pose could not be transformed into the controller's odom frame (no
+# frame_id, no map -> odom yet), or the robot's own pose was unavailable at
+# acceptance.
+uint16 TRANSFORM_FAILED=301
+# A FollowPath goal was executing. The docking trees cannot cause this (they
+# dock only after their own FollowPath has returned), so it means another
+# client is driving the robot.
+uint16 CONTROLLER_BUSY=302
+# The controller threw, the robot pose was lost for longer than the server's
+# failure_tolerance, or the progress checker saw no movement: error_msg has
+# the controller's own words.
+uint16 FAILED_TO_CONTROL=303
+# `timeout` elapsed before the goal checker accepted the pose.
+uint16 TIMEOUT=304
+# controller_id or goal_checker_id names a plugin that is not loaded;
+# error_msg lists the ones that are.
+uint16 INVALID_PLUGIN=305
+
+uint16 error_code
+# Human-readable detail for the operator; empty when error_code is NONE.
+string error_msg
+# Where the robot stopped relative to dock_pose, whatever the status: metres
+# and radians, measured on the last control cycle that had a robot pose. A
+# SUCCEEDED goal reports the residual the goal checker accepted; an ABORTED
+# one, how far it got. final_distance_error is -1.0 when no cycle ever had a
+# pose (rejected at acceptance), and final_yaw_error is then meaningless.
+float32 final_distance_error
+float32 final_yaw_error
+---
+# Straight-line distance and shortest yaw difference from the robot to
+# dock_pose, the commanded forward speed (absolute: negative when backing
+# out), and the time since the goal was accepted. Published once per control
+# cycle (controller_frequency, 20 Hz); the DockToPose BT node turns
+# distance_to_dock into NavigateToGoal's status_msg.
+float32 distance_to_dock
+float32 yaw_error
+float32 speed
+builtin_interfaces/Duration docking_time

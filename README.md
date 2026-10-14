@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 15 messages, 21 services, 2
+The stack's shared ROS 2 interface definitions — 15 messages, 21 services, 3
 actions. No code, no nodes: `rosidl_generate_interfaces` only.
 
 An interface lives here only when two or more packages share it; single-package
@@ -18,7 +18,10 @@ syncai_sys_manager ────────────────────�
 syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid / AutoLocalize / ResetOdometry──► syncai_localizer (localizer_node) ──ResetLIO──► syncai_pointlio
-syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose)
+syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose;
+                                                                   a DOCK / UNDOCK step is the same action with behavior_tree = dock.xml / undock.xml)
+syncai_task_runner ──DockToPose─────────────► syncai_controller (controller_server; from the docking trees' DockToPose BT node)
+syncai_task_runner ──SetMotionKey───────────► syncai_driver_manager (the docking trees' gait switch)
 ```
 
 ## This repository
@@ -38,7 +41,9 @@ colcon build --packages-select syncai_common
 
 Consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
 `syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`,
-`syncai_localizer` and `syncai_task_runner`. Any change here is an ABI break
+`syncai_localizer`, `syncai_task_runner` and, since 2026-10,
+`syncai_controller` (serves `DockToPose`) and `syncai_behavior_tree` (the
+`DockToPose` / `SetMotionKey` client nodes). Any change here is an ABI break
 for all of them — see **Gotchas**.
 
 ## Messages
@@ -266,7 +271,9 @@ failed wifi connect becomes HTTP 400 with that string).
 `nav2_msgs/NavigateToPose` plus a failure reason.
 
 - **Goal:** `pose` (`PoseStamped`, in `map`), `behavior_tree` (absolute XML
-  path; empty = default `move.xml`).
+  path, or since 2026-10 a bare file name resolved against task_runner's
+  `behavior_trees/`; empty = default `move.xml`; `dock.xml` / `undock.xml`
+  are the docking trees, and for those `pose` is the **dock** pose).
 - **Result:** `error_code`, `error_msg`.
 - **Feedback:** nav2's `current_pose`, `navigation_time`,
   `estimated_time_remaining`, `number_of_recoveries`, `distance_remaining`,
@@ -287,11 +294,46 @@ action; that one is removed after the backend migrates.
 | `UNKNOWN` = 1 | The tree failed with no node reporting: an exception, or a server that never acknowledged the goal (`error_msg` names it). 1–99 is the navigator / tree range |
 | `FOLLOW_PATH_FAILED` = 100 | Path following failed after retries: blocked with no detour, no progress, or robot pose lost. 1xx is the controller range |
 | `PLAN_FAILED` = 200 | Planning failed twice (after a global-costmap clear): no route, start or goal in an obstacle / keepout zone, or TF. 2xx is the planner range |
+| `DOCK_FAILED` = 300 | The docking branch of `dock.xml` / `undock.xml` failed (2026-10): the gait controller refused the mode switch (`LOCKED`), the dock pose was unusable, or the dock approach / back-out aborted — the controller's `DockToPose` reason is in `error_msg`. The tree restores RL locomotion first. A dock goal can still carry 100 / 200: that is `dock.xml`'s staging leg, i.e. the dock was unreachable. 3xx is the docking range |
 
 Ranges follow nav2 Iron's, so finer codes can be added as `base + n` once
 Humble's planner/controller results carry a reason. Clients may switch on the
-hundreds; the two bases are never renumbered. Field names mirror nav2's
+hundreds; the three bases are never renumbered. Field names mirror nav2's
 because one navigator template in `syncai_task_runner` serves both actions.
+
+### DockToPose
+
+The last metre onto (or off) a dock: a pose-to-pose approach with no path and
+no costmap, served by `syncai_controller`'s `controller_server` on
+`dock_to_pose` (`<robot_id>/dock_to_pose`) beside the unchanged
+`nav2_msgs/FollowPath`, one of the two at a time. Added 2026-10. The backend
+does **not** call it: a dock is a `NavigateToGoal` with `behavior_tree:
+dock.xml` (`undock.xml` to back out), and the `DockToPose` BT node in
+`syncai_behavior_tree` is its only client.
+
+- **Goal:** `dock_pose` (`PoseStamped`, any frame — transformed into the
+  controller's odom frame **once** at acceptance and tracked there, so a
+  localizer correction never moves the target mid-approach), `controller_id`
+  (empty → `Docking`; `Undocking` backs out — direction is a controller
+  configuration, not a goal field), `goal_checker_id` (empty →
+  `dock_goal_checker`), `timeout` (s; `<= 0` → the server's 60).
+- **Result:** `error_code`, `error_msg`, `final_distance_error` /
+  `final_yaw_error` (the residual on the last cycle that had a robot pose;
+  distance `-1.0` when none did).
+- **Feedback:** `distance_to_dock`, `yaw_error`, `speed`, `docking_time`, once
+  per control cycle.
+
+| `error_code` | Meaning |
+|---|---|
+| `NONE` = 0 | Also `SUCCEEDED` and `CANCELED`. **`ABORTED` + `NONE` is "superseded or not started"**, as for `NavigateToGoal` |
+| `UNKNOWN` = 1 | |
+| `TRANSFORM_FAILED` = 301 | `dock_pose` could not be transformed into odom (no `frame_id`, no `map → odom`), or the robot's own pose was unavailable |
+| `CONTROLLER_BUSY` = 302 | A `FollowPath` goal was executing |
+| `FAILED_TO_CONTROL` = 303 | The controller threw, the robot pose was lost past `failure_tolerance`, or no progress — `error_msg` has the controller's words |
+| `TIMEOUT` = 304 | `timeout` elapsed before the goal checker accepted the pose |
+| `INVALID_PLUGIN` = 305 | `controller_id` / `goal_checker_id` is not loaded; `error_msg` lists what is |
+
+3xx is `NavigateToGoal.DOCK_FAILED`'s range: these are its `base + n` reasons.
 
 ### ExecuteTask
 
@@ -364,8 +406,9 @@ ros2 interface list | grep syncai_common
 - **Renumbering a constant is a silent ABI break.** Constants compile into
   consumers, so nothing fails loudly — but old bags decode to the wrong names
   (as happened when `RobotStatus` gained `UNINITIALIZED = 0`).
-  `NavigateToGoal`'s `100` / `200` bases are fixed because the backend switches
-  on them.
+  `NavigateToGoal`'s `100` / `200` / `300` bases are fixed because the backend
+  switches on them, and `DockToPose`'s 301–305 sit inside the 300 range for
+  the same reason.
 - **Timestamp units differ.** `ExecuteTask`: milliseconds.
   `RobotState.timestamp` and `motor_status.timestamp`: **seconds** (the
   frontend multiplies by 1000). The `motor_states` topic: **nanoseconds**
