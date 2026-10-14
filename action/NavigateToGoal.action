@@ -70,7 +70,9 @@ uint16 PLAN_FAILED=200
 # <= 0), or the dock approach / back-out aborted -- the controller's
 # DockToPose reason (transform, timeout, lost control) is in error_msg. The
 # tree restores RL locomotion before reporting this, so the robot is left in
-# the gait the step found it in. A dock goal can still end with PLAN_FAILED
+# the gait the step found it in -- except when only dock.xml's final
+# lie-down was refused: the robot is then standing ON the dock, still in MPC,
+# and is deliberately not switched to the walking gait. A dock goal can still end with PLAN_FAILED
 # / FOLLOW_PATH_FAILED: that is dock.xml's staging leg, i.e. the dock was
 # unreachable, not the dock itself. dock and undock share this base because
 # the backend knows which tree it sent; error_msg says approach or back-out.

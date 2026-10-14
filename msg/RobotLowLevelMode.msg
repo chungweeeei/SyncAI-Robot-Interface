@@ -64,21 +64,22 @@ int32 policy_state
 # The controller's motion state:
 #
 #   0  Stand      1  Locomotion     2  LieDown      3  Damping
-#   4  ESTOP      8  UNKNOWN  <- the controller's own startup sentinel
+#   4  ESTOP      5  MPC            8  UNKNOWN  <- the controller's own startup sentinel
 #
 # 8 is the only sentinel in either vocabulary and it exists only on this index. It
 # is the controller saying "I have not entered a state yet", NOT this stack saying
 # "I have not heard from the controller" — 0 (Stand) is what that looks like.
 #
-# MPC IS ABSENT FROM THIS TABLE AND ITS CODE IS UNKNOWN. Both tables are
-# transcribed from the reference implementation's Readme (GaitMPC
-# udp_ros_bridge), which has no MPC entry at all. This workspace added one
-# anyway: syncai_driver_manager maps SetMotionKey key "5" to the controller
-# command `MODE M`. Whatever the controller then reports on this index is
-# unknown, so a consumer WILL eventually see an integer that is not in the table
-# above. Pass it through — do not clamp it, do not treat it as an error, and do
-# not assume the absence of MPC. Resolving this is a hardware-observation task:
-# put the robot in MPC and read the value.
+# MPC = 5 was READ OFF THE ROBOT (2026-10-14), not transcribed: the reference
+# implementation's Readme (GaitMPC udp_ros_bridge), where the rest of both
+# tables comes from, has no MPC entry at all. syncai_driver_manager maps
+# SetMotionKey key "5" to the controller command `MODE M`, and the controller
+# then reports 5 here -- the same number as the key, which the other keys do
+# not promise (key "1" is Locomotion, reported 1, but nothing says the
+# mapping is the identity in general). syncai_task_runner's docking trees wait
+# for it (the WaitForMotionState BT node). The table may still be incomplete:
+# pass an unknown integer through -- do not clamp it, do not treat it as an
+# error.
 int32 motion_state
 
 # Whether syncai_driver_manager's software safety lock is engaged, copied from
