@@ -311,9 +311,14 @@ does **not** call it: a dock is a `NavigateToGoal` with `behavior_tree:
 dock.xml` (`undock.xml` to back out), and the `DockToPose` BT node in
 `syncai_behavior_tree` is its only client.
 
-- **Goal:** `dock_pose` (`PoseStamped`, any frame — transformed into the
-  controller's odom frame **once** at acceptance and tracked there, so a
-  localizer correction never moves the target mid-approach), `controller_id`
+- **Goal:** a **planar pose, not a `PoseStamped`** — `frame_id` (empty →
+  `map`), `x` / `y` (m) and `yaw` (rad, counter-clockwise from the frame's
+  +x), since 2026-10-14, because the controller uses nothing else and a
+  hand-written quaternion is the easiest part of a CLI goal to get wrong. Any
+  TF frame works (`<robot_id>/base_link` with `x: 1.0` is "1 m ahead"); the
+  pose is transformed into the controller's odom frame **once** at
+  acceptance and tracked there, so a localizer correction never moves the
+  target mid-approach. Then `controller_id`
   (empty → `Docking`; `Undocking` backs out — direction is a controller
   configuration, not a goal field), `goal_checker_id` (empty →
   `dock_goal_checker`), `timeout` (s; `<= 0` → the server's 60).
@@ -327,7 +332,7 @@ dock.xml` (`undock.xml` to back out), and the `DockToPose` BT node in
 |---|---|
 | `NONE` = 0 | Also `SUCCEEDED` and `CANCELED`. **`ABORTED` + `NONE` is "superseded or not started"**, as for `NavigateToGoal` |
 | `UNKNOWN` = 1 | |
-| `TRANSFORM_FAILED` = 301 | `dock_pose` could not be transformed into odom (no `frame_id`, no `map → odom`), or the robot's own pose was unavailable |
+| `TRANSFORM_FAILED` = 301 | The goal pose could not be transformed into odom (an unknown `frame_id`, no `map → odom`), or the robot's own pose was unavailable |
 | `CONTROLLER_BUSY` = 302 | A `FollowPath` goal was executing |
 | `FAILED_TO_CONTROL` = 303 | The controller threw, the robot pose was lost past `failure_tolerance`, or no progress — `error_msg` has the controller's words |
 | `TIMEOUT` = 304 | `timeout` elapsed before the goal checker accepted the pose |

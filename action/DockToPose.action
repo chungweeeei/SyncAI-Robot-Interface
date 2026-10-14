@@ -19,8 +19,8 @@
 # params file loads the same plugin twice -- `Docking` (forward, rotates in
 # place first) and `Undocking` (allow_backward, no initial rotation) -- and
 # the control law reverses by itself when the target is behind the robot.
-# undock.xml sends controller_id "Undocking" with the staging pose as
-# dock_pose; dock.xml sends "Docking" with the dock pose.
+# undock.xml sends controller_id "Undocking" with the staging pose as the
+# target; dock.xml sends "Docking" with the dock pose.
 #
 # Called by the DockToPose BT node (syncai_behavior_tree) from the docking
 # trees, syncai_task_runner's behavior_trees/dock.xml and undock.xml. The
@@ -28,14 +28,25 @@
 # with behavior_tree = dock.xml / undock.xml, so one action and one
 # error_code surface cover every kind of goal. Added 2026-10.
 
-# Where base_link must end up, in any TF frame the controller can resolve
-# (the trees hand it the task's map-frame pose). The server transforms it
-# into its odom frame ONCE, at acceptance (and again on a preempt), and
+# Where base_link must end up: a planar pose (x, y in metres, yaw in
+# radians, counter-clockwise from the frame's +x) in `frame_id`. Planar on
+# purpose (2026-10-14): the docking controller only ever uses x, y and yaw,
+# and a hand-written quaternion is the easiest part of a CLI goal to get
+# wrong. The other actions here keep geometry_msgs/PoseStamped; the
+# DockToPose BT node does that conversion for the trees.
+#
+# Any TF frame the controller can resolve; empty -> "map", the frame the
+# tasks give dock poses in. `<robot_id>/base_link` is useful by hand: x: 1.0
+# is "1 m ahead of where the robot stands now". The server transforms the
+# pose into its odom frame ONCE, at acceptance (and again on a preempt), and
 # tracks it there: odom is continuous and map is not, so a localization
 # correction mid-approach would otherwise move the target under a robot
 # that is 20 cm from it. TRANSFORM_FAILED if the lookup fails -- there is no
 # retry, since a missing map -> odom will not appear in the next 100 ms.
-geometry_msgs/PoseStamped dock_pose
+string frame_id
+float64 x
+float64 y
+float64 yaw
 # Id in controller_server's controller_plugins; empty -> the server's
 # default_dock_controller_id ("Docking"). "Undocking" backs out instead.
 string controller_id
@@ -61,9 +72,9 @@ float32 timeout
 # through. Never renumber them.
 uint16 NONE=0
 uint16 UNKNOWN=1
-# dock_pose could not be transformed into the controller's odom frame (no
-# frame_id, no map -> odom yet), or the robot's own pose was unavailable at
-# acceptance.
+# The goal pose could not be transformed into the controller's odom frame
+# (an unknown frame_id, no map -> odom yet), or the robot's own pose was
+# unavailable at acceptance.
 uint16 TRANSFORM_FAILED=301
 # A FollowPath goal was executing. The docking trees cannot cause this (they
 # dock only after their own FollowPath has returned), so it means another
@@ -82,7 +93,7 @@ uint16 INVALID_PLUGIN=305
 uint16 error_code
 # Human-readable detail for the operator; empty when error_code is NONE.
 string error_msg
-# Where the robot stopped relative to dock_pose, whatever the status: metres
+# Where the robot stopped relative to the goal pose, whatever the status: metres
 # and radians, measured on the last control cycle that had a robot pose. A
 # SUCCEEDED goal reports the residual the goal checker accepted; an ABORTED
 # one, how far it got. final_distance_error is -1.0 when no cycle ever had a
@@ -91,7 +102,7 @@ float32 final_distance_error
 float32 final_yaw_error
 ---
 # Straight-line distance and shortest yaw difference from the robot to
-# dock_pose, the commanded forward speed (absolute: negative when backing
+# the goal pose, the commanded forward speed (absolute: negative when backing
 # out), and the time since the goal was accepted. Published once per control
 # cycle (controller_frequency, 20 Hz); the DockToPose BT node turns
 # distance_to_dock into NavigateToGoal's status_msg.
