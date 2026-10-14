@@ -76,7 +76,7 @@ RobotState
 └─ RobotLowLevelMode low_level_mode   the GAIT CONTROLLER's state machine — not `mode` above
      ├─ int32  policy_state           0 PPO / 1 HIMLOCO / 2 CHAMP / 3 ISSAC (no sentinel)
      ├─ int32  motion_state           0 Stand / 1 Locomotion / 2 LieDown / 3 Damping /
-     │                                4 ESTOP / 8 UNKNOWN (MPC's code is unknown)
+     │                                4 ESTOP / 5 MPC (read off the robot) / 8 UNKNOWN
      └─ bool   safety_state           driver_manager's safety lock engaged (OURS, not the controller's)
 ```
 
