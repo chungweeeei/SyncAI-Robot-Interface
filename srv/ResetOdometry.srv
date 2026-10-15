@@ -3,7 +3,8 @@
 # localizer_node (the workspace's syncai_localizer) on the relative name
 # `reset_odometry`, in the bare robot_id namespace, so it lands on
 # <robot_id>/reset_odometry, next to relocalize / auto_localize. New in
-# 2026-10; nothing calls it yet.
+# 2026-10; the backend calls it with skip_seed behind
+# POST /api/v1/localization/auto (kidnap recovery), with a 40 s client timeout.
 #
 # WHY IT IS NOT JUST pointlio/reset. ResetLIO restarts Point-LIO with its odom
 # origin wherever the robot stands, but the localizer's map -> pointlio_odom
@@ -31,6 +32,11 @@
 #   3. global_fallback: when the seed does not converge, run AutoLocalize's
 #      hint-free search over the map's poses.txt keyframes, on scans of the new
 #      run only.
+# skip_seed bypasses all three: no seed is tried, and the global search runs
+# as soon as the new run has filled the search's scan window. That is the
+# kidnap case -- the robot was carried, so the last trusted registration is
+# wrong by definition (and, right after boot, there is none), and trying it
+# first costs converge_timeout_sec and risks converging on a look-alike spot.
 #
 # THE ROBOT MUST BE STANDING STILL, for the whole call. Point-LIO re-runs its
 # static, gravity-aligning IMU initialisation (see ResetLIO); one done in
@@ -42,7 +48,10 @@
 # most the sum of the node's reset_odom.lio_reset_timeout_sec +
 # reset_odom.wait_lio_timeout_sec + reset_odom.converge_timeout_sec, plus
 # AutoLocalize's two deadlines when global_fallback is taken (2 + 10 + 5, + 15
-# s by default) -- a client timeout must exceed that. On failure the odometry
+# s by default) -- a client timeout must exceed that. With skip_seed it is
+# lio_reset_timeout_sec + wait_lio_timeout_sec (which also bounds the wait for
+# the scan window) + AutoLocalize's two deadlines (2 + 10 + 10 + 5 = 27 s by
+# default), with no seeded wait in between. On failure the odometry
 # has still been reset (that step is not undone) and the map -> pointlio_odom
 # correction is left at the seed, so TF stays continuous; retry with a hint, or
 # publish initialpose.
@@ -56,16 +65,27 @@ float32 yaw
 # When the seed does not converge, try the hint-free global search before
 # giving up.
 bool global_fallback
+# Try no seed: reset, then go straight to the hint-free global search on
+# new-run scans. use_hint and global_fallback are ignored when set. Needs a
+# map saved with save_patches (poses.txt), like AutoLocalize.
+bool skip_seed
 ---
 bool success
 # What happened at each step, or why it stopped.
 string message
 # Which seed the reported pose came from: "hint", "last_good" or "global".
 # Empty when the call stopped before seeding (no seed, or the LIO reset
-# itself failed).
+# itself failed), and with skip_seed until the search has found a pose.
 string method
 # The seeded (on failure) or converged (on success) map pose of the robot.
 # Angles in radians.
 float32 x
 float32 y
 float32 yaw
+# The global search's measurements, as in AutoLocalize.Response. Filled only
+# when method is "global" (the search found a pose, converged or not); zero
+# otherwise.
+float32 z
+float32 fitness
+float32 inlier_ratio
+int32 candidates

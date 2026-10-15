@@ -3,8 +3,10 @@
 # [initial_pose], or localization lost). Served by localizer_node
 # (the workspace's syncai_localizer) on the relative name `auto_localize`, in
 # the bare robot_id namespace, so it lands on <robot_id>/auto_localize, next to
-# relocalize / relocalize_check. New in 2026-10; the backend calls it behind
-# POST /api/v1/localization/auto, with a 30 s client timeout.
+# relocalize / relocalize_check. New in 2026-10. The backend called it behind
+# POST /api/v1/localization/auto until 2026-10-15; that route now calls
+# ResetOdometry with skip_seed, which runs this same search on the scans of a
+# freshly reset Point-LIO (see the divergence note below).
 #
 # SUCCESS IS A RESULT, NOT A RECEIPT -- the opposite of Relocalize. The call
 # blocks until either:
@@ -26,7 +28,7 @@
 # kidnap made Point-LIO itself diverge, this service cannot help: its scan
 # window is posed by the diverged odometry. Call ResetOdometry instead (robot
 # stationary), which resets the LIO, drops that window and ends in this same
-# search when asked to (global_fallback).
+# search when asked to (global_fallback, or skip_seed to go to it directly).
 #
 # No request fields: the whole point is that no hint is needed.
 ---
