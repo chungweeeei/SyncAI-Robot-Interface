@@ -193,7 +193,7 @@ reads as the safe state.
 | `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` (`localizer_node`) |
 | `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` (`localizer_node`) |
 | `AutoLocalize` | *(empty)* | `success`, `message`, `x`, `y`, `z`, `yaw`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
-| `ResetOdometry` | `bool use_hint`, `x`, `y`, `yaw` (`float32`, radians), `bool global_fallback` | `success`, `message`, `string method`, `x`, `y`, `yaw` (`float32`) | `syncai_localizer` (`localizer_node`) |
+| `ResetOdometry` | `bool use_hint`, `x`, `y`, `yaw` (`float32`, radians), `bool global_fallback`, `bool skip_seed` | `success`, `message`, `string method`, `x`, `y`, `yaw`, `z`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
 
 Notes:
 
@@ -243,8 +243,9 @@ Notes:
   has registered against the pose found. Blocks up to the node's two deadlines
   (15 s by default), fails rather than guesses on an ambiguous match, and on
   any failure leaves localization as it was. Needs a map saved with
-  `save_patches`. The backend calls it behind `POST /api/v1/localization/auto`,
-  with a 30 s client timeout.
+  `save_patches`. The backend called it behind `POST /api/v1/localization/auto`
+  until 2026-10-15; that route now calls `ResetOdometry` with `skip_seed`,
+  which ends in the same search on scans of a freshly reset Point-LIO.
 - **`ResetOdometry` is `ResetLIO` for the nav session** — zero the odometry
   the way a wheeled robot resets its encoders, without losing the map pose.
   A bare `ResetLIO` there leaves the localizer's map → odom correction solved
@@ -252,9 +253,13 @@ Notes:
   sequence instead: `ResetLIO`, drop everything at or before its
   `last_odom_time`, seed the new run from the hint or the last trusted
   registration, wait for its own registration, and optionally fall back to
-  `AutoLocalize`'s search. A result, not a receipt; blocks up to its
-  deadlines' sum (17 s, 32 s with the fallback, by default). **The robot must
-  be standing still**, as for every LIO reset. Nothing calls it yet.
+  `AutoLocalize`'s search. `skip_seed` tries no seed and goes straight to
+  that search — the kidnap case, where the last trusted registration is wrong
+  by definition or, right after boot, missing. A result, not a receipt;
+  blocks up to its deadlines' sum (17 s, 32 s with the fallback, 27 s with
+  `skip_seed`, by default). **The robot must be standing still**, as for
+  every LIO reset. The backend calls it with `skip_seed` behind
+  `POST /api/v1/localization/auto` (2026-10-15), with a 40 s client timeout.
 - **`RestartMode` restarts the live mode's session.** `SwitchMode` to the live
   mode is a no-op, so this is the only way to restart a wedged stack. Refused
   in MAINTENANCE, with both sessions up, and **always** in MANUAL (`pgo_node`
