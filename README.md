@@ -94,7 +94,7 @@ robots, so a shared absolute `/robot_state` would interleave them.
 | `RobotLocalizationStatus` | `position`, `velocity` | |
 | `RobotNetworkStatus` | `wifi_info` | A JSON string — see below |
 | `RobotBatteryStatus` | `battery_percentage` | 0–100, scaled from `sensor_msgs/BatteryState.percentage` |
-| `RobotMode` | `MAINTENANCE=0`, `MANUAL=1`, `AUTO=2` | **Constants only**, names the values of `RobotState.mode`. |
+| `RobotMode` | `MAINTENANCE=0`, `MANUAL=1`, `AUTO=2`, `CALIBRATION=3` | **Constants only**, names the values of `RobotState.mode`. `CALIBRATION` (2026-10) is the lidar-camera calibration session; a consumer that maps the values to names must not assume there are three. |
 | `RobotStatus` | `UNINITIALIZED=0`, `IDLE=1`, `RUNNING=2`, `WARNING=3`, `ERROR=4`, `CHARGING=5` | Constants only, for `state`. `0` is `UNINITIALIZED` so a default-constructed message does not claim `IDLE`. |
 | `RobotLowLevelMode` | `policy_state`, `motion_state`, `safety_state` | The gait controller's state machine, from the `mode` topic. Both indices are the **controller's** vocabularies and carry **no constants** (see `SetPolicyMode`). No freshness field: `0 / 0` before the first sample looks like a real `PPO / Stand`. `safety_state` is instead `syncai_driver_manager`'s own lock (latched `safety_locked` topic). Nothing triggers that lock outside tests yet, so `false` is not a checked safety signal. |
 

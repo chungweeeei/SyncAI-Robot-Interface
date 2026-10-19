@@ -1,13 +1,17 @@
 # Switch the robot's operating mode by rebuilding the byobu session that
 # implements it: AUTO tears down the mapping session and brings up
 # config/sessions/start_nav.yaml (navigation), MANUAL does the reverse and brings
-# up config/sessions/start_mapping.yaml (syncai_pointlio + syncai_mapping).
+# up config/sessions/start_mapping.yaml (syncai_pointlio + syncai_mapping), and
+# CALIBRATION brings up config/sessions/calib_lidar_camera.yaml (bringup with
+# the livox driver on PointCloud2, plus the camera feeder) for recording
+# lidar-camera calibration bags. Every switch kills whichever session is up.
 #
 # Served by syncai_sys_manager on the relative name `switch_mode`, so it lands on
 # <robot_id>/switch_mode. This restarts most of the stack — it is not a cheap
 # call, and it takes as long as tearing down and re-sending ~40 byobu commands.
 #
-# mode values are defined as constants in RobotMode (MAINTENANCE/MANUAL/AUTO),
+# mode values are defined as constants in RobotMode (MAINTENANCE/MANUAL/AUTO/
+# CALIBRATION),
 # reused rather than redeclared here so RobotState.mode and this request speak
 # the same vocabulary.
 #
