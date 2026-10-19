@@ -8,11 +8,12 @@
 # restart, and it cannot drift from reality if someone builds or kills a session
 # by hand.
 #
-# mode values are defined as constants in RobotMode (MAINTENANCE/MANUAL/AUTO).
+# mode values are defined as constants in RobotMode (MAINTENANCE/MANUAL/AUTO/
+# CALIBRATION).
 # MAINTENANCE means no session is running at all — the stack is down.
 #
-# success is false only when the answer is ambiguous, i.e. both the navigation
-# and mapping sessions exist at once (possible only if they were built by hand;
+# success is false only when the answer is ambiguous, i.e. more than one mode's
+# session exists at once (possible only if they were built by hand;
 # switch_mode always kills every known session before building one). `mode` then
 # holds the first match and `message` names both.
 #
