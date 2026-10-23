@@ -24,6 +24,16 @@
 # renaming a map directory a single os.rename. Keep it that way.
 string file_path
 bool save_patches
+# Whether the post-save map cleaning also builds the 3D map (octomap.bt,
+# which the 3D planner plans on). Three states rather than a bool because a
+# bool's default is false: every caller that predates the field (bag replay,
+# scripts) would silently switch the 3D map off on a robot whose
+# map_clean_octomap parameter turns it on. DEFAULT keeps that parameter's
+# say; ON and OFF decide for this one save. Any other value is refused.
+uint8 OCTOMAP_DEFAULT=0
+uint8 OCTOMAP_ON=1
+uint8 OCTOMAP_OFF=2
+uint8 octomap
 ---
 bool success
 string message
