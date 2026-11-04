@@ -1,0 +1,84 @@
+# Drive through several poses in order (the patrol route), and say WHY when
+# it cannot.
+#
+# Served by task_runner (syncai_task_runner, SyncAI-Robot-Workspace) on the
+# relative name `navigate_through_goals` -> <robot_id>/navigate_through_goals,
+# next to the UNCHANGED nav2_msgs/NavigateThroughPoses on
+# <robot_id>/navigate_through_poses: same navigator code, same behavior tree
+# (patrol.xml), same preemption rules; only the result and two feedback
+# fields differ. NavigateToGoal is to NavigateToPose what this is to
+# NavigateThroughPoses (2026-11): nav2's result is std_msgs/Empty, so an
+# aborted PATROL step could tell the operator nothing, and the backend could
+# not tell a waypoint in a keepout zone (permanent) from a person in the way
+# (worth a retry). The backend migrates at its own pace; the nav2 action
+# stays until it has.
+#
+# Field NAMES mirror nav2's NavigateThroughPoses on purpose (goal.poses,
+# goal.behavior_tree, the six feedback fields): one navigator template in
+# task_runner serves both actions, and it compiles only because the member
+# names agree.
+
+# The waypoints, in order, in the navigator's global_frame (map). Each pose's
+# z picks its floor. The route passes through every waypoint without stopping
+# or turning; only the last one is reached like a MOVE's goal (xy and its
+# heading), the others' headings are ignored.
+geometry_msgs/PoseStamped[] poses
+# Path of a BT XML to tick instead of the default patrol.xml; empty = the
+# default. Absolute, or a bare file name resolved against task_runner's own
+# behavior_trees/ directory.
+string behavior_tree
+---
+# Which stage failed. Meaningful ONLY with status ABORTED; SUCCEEDED and
+# CANCELED carry NONE.
+#
+# ABORTED + NONE is not a navigation failure, exactly as for NavigateToGoal:
+# superseded by a newer goal on this action, or rejected before the tree ran
+# (the other navigators busy -- one navigation at a time across task_runner's
+# actions -- an empty route, or a behavior_tree that could not be loaded).
+#
+# NavigateToGoal's layout and numbers, one table in four files (that one,
+# this one, ComputePathToPose and ComputePathThroughPoses): keep them in step,
+# never renumber one. ComputePathToPose documents each 2xx reason and whether
+# a retry can help. On a route a waypoint's reason is the goal's
+# (GOAL_IN_KEEPOUT: some waypoint lies in a zone) and error_msg names the leg.
+uint16 NONE=0
+uint16 UNKNOWN=1
+uint16 FOLLOW_PATH_FAILED=100
+uint16 PLAN_FAILED=200
+uint16 INVALID_PLANNER=201
+uint16 TF_ERROR=202
+uint16 START_OUTSIDE_MAP=203
+uint16 GOAL_OUTSIDE_MAP=204
+uint16 START_OCCUPIED=205
+uint16 GOAL_OCCUPIED=206
+uint16 TIMEOUT=207
+uint16 NO_VALID_PATH=208
+uint16 NO_VIAPOINTS_GIVEN=209
+uint16 MAP_NOT_LOADED=220
+uint16 MAP_LOADING=221
+uint16 START_IN_KEEPOUT=222
+uint16 GOAL_IN_KEEPOUT=223
+uint16 DISCONNECTED=224
+# The docking range: never produced by patrol.xml, kept so the table is
+# NavigateToGoal's whole.
+uint16 DOCK_FAILED=300
+
+uint16 error_code
+# Human-readable, written for the operator console: a stage sentence with
+# the BT node's detail in parentheses. Empty when error_code is NONE.
+string error_msg
+---
+# nav2's six fields, same names, plus NavigateToGoal's two.
+geometry_msgs/PoseStamped current_pose
+builtin_interfaces/Duration navigation_time
+builtin_interfaces/Duration estimated_time_remaining
+int16 number_of_recoveries
+float32 distance_remaining
+# Waypoints not yet passed, the last one included until the route is done.
+int16 number_of_poses_remaining
+# Plans made for this goal beyond the first: the detours. Resets with every
+# (pre-empted) goal.
+uint16 number_of_replans
+# What the navigator is doing right now: one English sentence written by the
+# behavior tree. Free text: show it, never switch on it.
+string status_msg
