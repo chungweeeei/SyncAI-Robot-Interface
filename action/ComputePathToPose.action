@@ -1,0 +1,88 @@
+# Plan a path to one pose, and say WHY when there is none.
+#
+# Served by planner_server (syncai_global_planner, SyncAI-Robot-Workspace) on
+# the relative name `compute_path_to_pose` -> <robot_id>/compute_path_to_pose,
+# IN PLACE OF nav2_msgs/ComputePathToPose (2026-11): the goal is nav2's,
+# field for field, and the result adds error_code / error_msg. Humble's nav2
+# result is a path and a planning time, so a failed plan reached the behavior
+# tree as "the planner aborted" and nothing more: NavigateToGoal could only
+# say PLAN_FAILED, and the backend retried a goal inside a keepout zone three
+# times, 5 s apart, because it could not tell it from a person standing on
+# the goal. Its only client is the ComputePathToPose BT node
+# (syncai_behavior_tree); nothing outside the robot calls it.
+#
+# Field NAMES mirror nav2's on purpose: the BT node and the planner server
+# kept their code, and nav2 Iron's own result added these same two fields.
+
+# Where to plan to, in any frame the planner server can transform into its
+# global frame (map).
+geometry_msgs/PoseStamped goal
+# Where to plan from, used only with use_start; otherwise the robot's pose.
+geometry_msgs/PoseStamped start
+# Which planner plugin; empty = the only one loaded (Octo3D).
+string planner_id
+bool use_start
+---
+nav_msgs/Path path
+builtin_interfaces/Duration planning_time
+
+# Why there is no path. Meaningful ONLY with status ABORTED; SUCCEEDED and
+# CANCELED carry NONE, and so does a goal preempted by a newer one.
+#
+# The numbers are NavigateToGoal's and NavigateThroughGoals' 2xx, one table
+# in four files (this one, ComputePathThroughPoses, and the two navigation
+# results): the navigator copies the code it gets here into its own result
+# unchanged. Keep the four in step; never renumber one. Where nav2 Iron
+# (ComputePathToPose) or Jazzy (ComputePathThroughPoses) has the reason, the
+# number and name are theirs; 220 and up are this stack's own, for reasons
+# nav2 has no code for. "Retry" says whether the same goal sent again later
+# can succeed, which is what a client deciding on a retry needs to know.
+uint16 NONE=0
+# A failure with no finer reason: a planner that returned an empty path
+# without saying why, or one that threw. Retry may help.
+uint16 PLAN_FAILED=200
+# planner_id names no loaded planner. Permanent.
+uint16 INVALID_PLANNER=201
+# The start or goal pose could not be transformed into the global frame, or
+# there is no robot pose to start from. Retry may help (TF catching up).
+uint16 TF_ERROR=202
+# The start / the goal lies outside the map's grid. Permanent.
+uint16 START_OUTSIDE_MAP=203
+uint16 GOAL_OUTSIDE_MAP=204
+# No traversable surface the robot can stand on near the start / the goal:
+# a wall, a ledge, a floor the z hint does not pick -- or a dynamic obstacle
+# (a person) covering it, which leaves. error_msg says which. Retry may help.
+uint16 START_OCCUPIED=205
+uint16 GOAL_OCCUPIED=206
+# The search ran out of time or of iterations before reaching the goal.
+# Retry may help.
+uint16 TIMEOUT=207
+# The search exhausted every reachable cell without reaching the goal: the
+# way is closed -- by a dynamic obstacle (retry may help) or by a keepout
+# zone (it will not). error_msg says which are present.
+uint16 NO_VALID_PATH=208
+# A route with no waypoints (ComputePathThroughPoses only). Permanent.
+uint16 NO_VIAPOINTS_GIVEN=209
+# No map is loaded: no octomap.bt for the map, a 2D map, or a failed load.
+# Permanent until a map switch.
+uint16 MAP_NOT_LOADED=220
+# The map is still being built from its octomap.bt (at boot, or seconds after
+# a load_map). Retry helps.
+uint16 MAP_LOADING=221
+# The robot stands inside a keepout zone: driven out by hand, not planned
+# out. Permanent until the robot is moved.
+uint16 START_IN_KEEPOUT=222
+# The goal (for a route: a waypoint) lies inside a keepout zone. Permanent
+# until the zone is edited.
+uint16 GOAL_IN_KEEPOUT=223
+# The start and the goal are on ground no stair joins (another floor with no
+# stair link, an island). Permanent. A keepout zone that cuts every stair
+# between them is NO_VALID_PATH: the ground is joined, the zone closes it.
+uint16 DISCONNECTED=224
+
+uint16 error_code
+# Human-readable, for the task_runner log and the operator console: the
+# planner's own sentence (which zone, which floor, which cells). Empty when
+# error_code is NONE.
+string error_msg
+---

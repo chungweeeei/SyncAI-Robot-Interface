@@ -46,12 +46,17 @@ string behavior_tree
 #   300..399 the docking branch (dock.xml / undock.xml only: SetMotionKey ->
 #            syncai_driver_manager, DockToPose -> syncai_controller's
 #            dock_to_pose; DockToPose.action numbers its own reasons 301..)
-# The branch constants are their range's base. Humble's nav2_msgs
-# results carry no reason, so today the branch is all the stack knows; when
-# a finer reason exists it becomes base + n (Iron: 104 patience exceeded,
-# 207 no valid path, ...) and a client that switches on the hundreds keeps
-# working. The bases are a contract between this file and the backend:
-# never renumber them.
+# The branch constants are their range's base. A finer reason is base + n
+# and a client that switches on the hundreds keeps working. The bases are a
+# contract between this file and the backend: never renumber them.
+#
+# Finer reasons exist for the planning branch since 2026-11: the planner's
+# own result (syncai_common/ComputePathToPose) carries a code, and the
+# navigator copies it here unchanged -- 201..224 below, the same table as
+# ComputePathToPose, ComputePathThroughPoses and NavigateThroughGoals (keep
+# the four in step). 200 itself is still what a planning failure with no
+# finer reason reads. The path-following branch has none yet: Humble's
+# FollowPath result carries no reason, so 1xx is 100 only.
 uint16 NONE=0
 # The tree failed without a node reporting: an exception inside the tree, or
 # a branch whose server never acknowledged the goal (error_msg names it).
@@ -60,10 +65,29 @@ uint16 UNKNOWN=1
 # blocked with no detour, no progress for movement_time_allowance, or the
 # robot pose lost for longer than failure_tolerance.
 uint16 FOLLOW_PATH_FAILED=100
-# The planning branch failed the tree: no route, start or goal inside an
-# obstacle / keepout zone, or a TF failure -- twice, since the tree clears
-# the global costmap and retries once before giving up.
+# The planning branch failed the tree -- twice, since the tree clears the
+# planner's dynamic overlay and retries once before giving up -- with no
+# finer reason below: a planner that gave none, or one that threw.
 uint16 PLAN_FAILED=200
+# The planning branch's finer reasons: ComputePathToPose's table, where each
+# is documented with whether the same goal sent again can succeed -- the
+# question a client deciding on a retry is asking. In short: permanent are
+# 201, 203, 204, 220 (until a map switch), 222 (until the robot is moved),
+# 223 (until the zone is edited) and 224; the others may clear by themselves.
+uint16 INVALID_PLANNER=201
+uint16 TF_ERROR=202
+uint16 START_OUTSIDE_MAP=203
+uint16 GOAL_OUTSIDE_MAP=204
+uint16 START_OCCUPIED=205
+uint16 GOAL_OCCUPIED=206
+uint16 TIMEOUT=207
+uint16 NO_VALID_PATH=208
+uint16 NO_VIAPOINTS_GIVEN=209
+uint16 MAP_NOT_LOADED=220
+uint16 MAP_LOADING=221
+uint16 START_IN_KEEPOUT=222
+uint16 GOAL_IN_KEEPOUT=223
+uint16 DISCONNECTED=224
 # The docking branch of behavior_trees/dock.xml or undock.xml failed: the
 # gait controller refused a motion-mode switch (the driver's safety lock,
 # "LOCKED"), the dock pose was unusable (no orientation, staging distance

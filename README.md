@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 15 messages, 21 services, 3
+The stack's shared ROS 2 interface definitions — 15 messages, 21 services, 6
 actions. No code, no nodes: `rosidl_generate_interfaces` only.
 
 An interface lives here only when two or more packages share it; single-package
@@ -20,6 +20,8 @@ syncai_backend ◄──MappingStatus──────────────�
 syncai_backend ──Relocalize / IsValid / AutoLocalize / ResetOdometry──► syncai_localizer (localizer_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose;
                                                                    a DOCK / UNDOCK step is the same action with behavior_tree = dock.xml / undock.xml)
+syncai_backend ──NavigateThroughGoals───────► syncai_task_runner   (the PATROL step, once it migrates off nav2_msgs/NavigateThroughPoses)
+syncai_task_runner ──ComputePathToPose / ComputePathThroughPoses──► syncai_global_planner (planner_server; from the BT's planner nodes)
 syncai_task_runner ──DockToPose─────────────► syncai_controller (controller_server; from the docking trees' DockToPose BT node)
 syncai_task_runner ──SetMotionKey───────────► syncai_driver_manager (the docking trees' gait switch)
 ```
@@ -28,7 +30,8 @@ syncai_task_runner ──SetMotionKey───────────► syncai
 
 It is its own repo so consumers import *this*, not the whole workspace. It
 depends only on `ament_cmake`, `rosidl_default_generators`,
-`builtin_interfaces` and `geometry_msgs` — no first-party package. Keep it that
+`builtin_interfaces`, `geometry_msgs` and (since 2026-11, for the planner
+actions' `nav_msgs/Path`) `nav_msgs` — no first-party package. Keep it that
 way: an interface package that depends on its consumers is no longer an
 interface.
 
@@ -43,7 +46,9 @@ Consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
 `syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`,
 `syncai_localizer`, `syncai_task_runner` and, since 2026-10,
 `syncai_controller` (serves `DockToPose`) and `syncai_behavior_tree` (the
-`DockToPose` / `SetMotionKey` client nodes). Any change here is an ABI break
+`DockToPose` / `SetMotionKey` client nodes, and since 2026-11 the
+`ComputePathToPose` / `ComputePathThroughPoses` ones), and since 2026-11
+`syncai_global_planner` (serves both planner actions). Any change here is an ABI break
 for all of them — see **Gotchas**.
 
 ## Messages
@@ -298,13 +303,65 @@ action; that one is removed after the backend migrates.
 | `NONE` = 0 | Also carried by `SUCCEEDED` and `CANCELED`. **`ABORTED` + `NONE` is not a navigation failure**: the goal was preempted by a newer one, or rejected before the tree ran (other navigator busy, or `behavior_tree` failed to load) |
 | `UNKNOWN` = 1 | The tree failed with no node reporting: an exception, or a server that never acknowledged the goal (`error_msg` names it). 1–99 is the navigator / tree range |
 | `FOLLOW_PATH_FAILED` = 100 | Path following failed after retries: blocked with no detour, no progress, or robot pose lost. 1xx is the controller range |
-| `PLAN_FAILED` = 200 | Planning failed twice (after a global-costmap clear): no route, start or goal in an obstacle / keepout zone, or TF. 2xx is the planner range |
+| `PLAN_FAILED` = 200 | Planning failed twice (after a dynamic-overlay clear) with no finer reason. 2xx is the planner range |
+| 201–224 | The planner's own reason (2026-11), copied unchanged from `ComputePathToPose`'s result — see **Planning failure codes** |
 | `DOCK_FAILED` = 300 | The docking branch of `dock.xml` / `undock.xml` failed (2026-10): the gait controller refused the mode switch (`LOCKED`), the dock pose was unusable, or the dock approach / back-out aborted — the controller's `DockToPose` reason is in `error_msg`. The tree restores RL locomotion first. A dock goal can still carry 100 / 200: that is `dock.xml`'s staging leg, i.e. the dock was unreachable. 3xx is the docking range |
 
-Ranges follow nav2 Iron's, so finer codes can be added as `base + n` once
-Humble's planner/controller results carry a reason. Clients may switch on the
-hundreds; the three bases are never renumbered. Field names mirror nav2's
+Ranges follow nav2 Iron's, so a finer code is `base + n`: the planner's
+reasons are since 2026-11, the controller's still to come (Humble's
+`FollowPath` result carries none). Clients may switch on the hundreds; the
+three bases are never renumbered. Field names mirror nav2's
 because one navigator template in `syncai_task_runner` serves both actions.
+
+### NavigateThroughGoals
+
+`nav2_msgs/NavigateThroughPoses` plus `NavigateToGoal`'s failure reason and
+feedback (2026-11): the patrol route.
+
+- **Goal:** `poses` (`PoseStamped[]`, in `map`; each z picks its floor),
+  `behavior_tree` (empty = `patrol.xml`).
+- **Result:** `error_code`, `error_msg` — `NavigateToGoal`'s table, the same
+  numbers; a waypoint's planning reason is the goal's, and `error_msg` names
+  the leg.
+- **Feedback:** nav2's six fields (`number_of_poses_remaining` included) plus
+  `number_of_replans` and `status_msg`.
+
+Served by `syncai_task_runner` on `navigate_through_goals` beside the
+**unchanged** `nav2_msgs/NavigateThroughPoses` on `navigate_through_poses`,
+which stays until the backend's PATROL step has migrated.
+
+### ComputePathToPose / ComputePathThroughPoses
+
+`nav2_msgs`' two planner actions, goal field for field, with `error_code` /
+`error_msg` added to the result (2026-11) — what nav2 Iron added to its own.
+Served by `syncai_global_planner`'s `planner_server` on
+`compute_path_to_pose` / `compute_path_through_poses` **in place of** the nav2
+types: their only clients are the BT nodes of the same names, so there was no
+old shape to keep. The backend does not call them; it reads their codes
+through `NavigateToGoal` / `NavigateThroughGoals`, which copy them unchanged.
+
+#### Planning failure codes
+
+One table in four files — the two planner actions and the two navigation
+results. Where nav2 Iron / Jazzy has the reason, the number and name are
+theirs; 220 and up are this stack's own. **Retry** is whether the same goal
+sent again later can succeed — what a client deciding on a retry needs.
+
+| `error_code` | Meaning | Retry |
+|---|---|---|
+| `PLAN_FAILED` = 200 | No finer reason: a planner that gave none, or threw | may help |
+| `INVALID_PLANNER` = 201 | `planner_id` names no loaded planner | no |
+| `TF_ERROR` = 202 | Start or goal not transformable into `map`, or no robot pose | may help |
+| `START_OUTSIDE_MAP` = 203 / `GOAL_OUTSIDE_MAP` = 204 | Outside the map's grid | no |
+| `START_OCCUPIED` = 205 / `GOAL_OCCUPIED` = 206 | No surface the robot can stand on near it — a wall, a ledge, the wrong floor, or a person (`error_msg` says which) | may help |
+| `TIMEOUT` = 207 | The search ran out of time or iterations | may help |
+| `NO_VALID_PATH` = 208 | Every reachable cell searched: the way is closed by a person (may clear) or a keepout zone (will not) | may help |
+| `NO_VIAPOINTS_GIVEN` = 209 | A route with no waypoints | no |
+| `MAP_NOT_LOADED` = 220 | No 3D map loaded | no (until a map switch) |
+| `MAP_LOADING` = 221 | The surface map is still being built | yes |
+| `START_IN_KEEPOUT` = 222 | The robot stands inside a keepout zone | no (until moved) |
+| `GOAL_IN_KEEPOUT` = 223 | The goal, or a waypoint, lies inside a keepout zone | no (until the zone is edited) |
+| `DISCONNECTED` = 224 | Start and goal on ground no stair joins | no |
 
 ### DockToPose
 
@@ -418,7 +475,10 @@ ros2 interface list | grep syncai_common
   (as happened when `RobotStatus` gained `UNINITIALIZED = 0`).
   `NavigateToGoal`'s `100` / `200` / `300` bases are fixed because the backend
   switches on them, and `DockToPose`'s 301–305 sit inside the 300 range for
-  the same reason.
+  the same reason. The planning codes 200–224 are written out in **four**
+  files (`ComputePathToPose`, `ComputePathThroughPoses`, `NavigateToGoal`,
+  `NavigateThroughGoals`; an interface cannot import another's constants):
+  change one, change all four.
 - **Timestamp units differ.** `ExecuteTask`: milliseconds.
   `RobotState.timestamp` and `motor_status.timestamp`: **seconds** (the
   frontend multiplies by 1000). The `motor_states` topic: **nanoseconds**
