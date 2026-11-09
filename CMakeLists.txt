@@ -54,6 +54,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/IsValid.srv"
   "srv/AutoLocalize.srv"
   "srv/ResetOdometry.srv"
+  "srv/DetectLandmark.srv"
   "action/ExecuteTask.action"
   "action/NavigateToGoal.action"
   "action/DockToPose.action"

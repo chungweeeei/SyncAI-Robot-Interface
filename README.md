@@ -24,6 +24,7 @@ syncai_backend ──NavigateThroughGoals───────► syncai_task_ru
 syncai_task_runner ──ComputePathToPose / ComputePathThroughPoses──► syncai_global_planner (planner_server; from the BT's planner nodes)
 syncai_task_runner ──DockToPose─────────────► syncai_controller (controller_server; from the docking trees' DockToPose BT node)
 syncai_task_runner ──SetMotionKey───────────► syncai_driver_manager (the docking trees' gait switch)
+syncai_task_runner ──DetectLandmark─────────► syncai_landmark_detection (landmark_detector; from the charge tree's DetectLandmark BT node)
 ```
 
 ## This repository
@@ -199,6 +200,7 @@ reads as the safe state.
 | `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` (`localizer_node`) |
 | `AutoLocalize` | *(empty)* | `success`, `message`, `x`, `y`, `z`, `yaw`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
 | `ResetOdometry` | `bool use_hint`, `x`, `y`, `yaw` (`float32`, radians), `bool global_fallback`, `bool skip_seed` | `success`, `message`, `string method`, `x`, `y`, `yaw`, `z`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
+| `DetectLandmark` | `landmark_id`, `target_frame`, `float32 max_age` | `error_code` (`uint16`), `error_msg`, `geometry_msgs/PoseStamped pose`, `float32 age`, `uint16 consecutive`, `bool ambiguous`, `float32 reprojection_error_px` | `syncai_landmark_detection` (`landmark_detector`) |
 
 Notes:
 
