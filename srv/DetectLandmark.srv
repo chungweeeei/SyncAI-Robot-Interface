@@ -1,0 +1,82 @@
+# Where a known landmark is right now, as seen by the robot's own sensors --
+# for the last metre of a charge, where a dock pose from the map is not
+# precise enough. Served by landmark_detector (the workspace's
+# syncai_landmark_detection) on the relative name `detect_landmark` ->
+# <robot_id>/detect_landmark. Called by the DetectLandmark BT node; the
+# backend does not call it. New in 2026-11.
+#
+# THE DETECTOR ONLY DETECTS. It returns where the landmark is and how sure the
+# sighting is; it never commands motion, never decides whether a sighting is
+# good enough (thresholds on `consecutive` / `ambiguous` /
+# `reprojection_error_px` are the caller's), and returns the landmark, not the
+# dock: where the robot should stop relative to the landmark is the dock's
+# geometry, the caller's too.
+#
+# A QUERY, NOT A TRIGGER. While active, the detector processes every frame
+# (a plugin may need the history: ArUco's mirror ambiguity is resolved over
+# several frames), and a call returns the newest sighting at once. It never
+# waits for a frame, so the caller polls at its own rate. The first call wakes
+# a detector in standby and answers SENSOR_STARTING; the detector goes back to
+# standby after its idle_timeout without a call.
+#
+# `landmark_id` names an entry in the node's landmark registry (its params
+# file), which names the detector plugin and the landmark's own parameters --
+# for ArUco the dictionary, the marker id and the printed size. The caller
+# never names the detection method. The printed size is the landmark's, not
+# the detector's: two prints of different sizes under one detector-wide size
+# give a wrong distance with no error.
+
+# Registry name, e.g. "charger_a". Required.
+string landmark_id
+# Frame of the returned pose; empty -> the node's odom_frame. The pose is
+# transformed at the image stamp, not at the call: the robot moves between
+# the capture and the call. Prefer odom (continuous) over map (jumps on a
+# localizer correction).
+string target_frame
+# Oldest sighting accepted, seconds; <= 0 -> the node's default_max_age.
+# Older than this is NOT_DETECTED, the last sighting's age in error_msg.
+float32 max_age
+---
+# Retry = the same call may succeed later; permanent = it will not.
+#
+# Numbered locally, not in NavigateToGoal's 3xx docking range as DockToPose's
+# are: detection is not docking-specific (any tree may look for a landmark),
+# and the DetectLandmark BT node maps these to the tree's own failure.
+uint16 NONE=0
+uint16 UNKNOWN=1
+# Permanent: landmark_id is not in the registry; error_msg lists the ones
+# that are.
+uint16 UNKNOWN_LANDMARK=2
+# Retry: this call woke the detector, or it woke recently, and no frame has
+# arrived yet.
+uint16 SENSOR_STARTING=3
+# Retry, but likely persistent: active and no frame for the node's
+# frame_timeout (the camera stream is down).
+uint16 SENSOR_UNAVAILABLE=4
+# Retry: frames arrive, no sighting newer than max_age.
+uint16 NOT_DETECTED=5
+# Retry: the camera -> target_frame transform at the image stamp failed.
+uint16 TRANSFORM_FAILED=6
+
+uint16 error_code
+# Detail for the log; empty when error_code is NONE.
+string error_msg
+# The landmark in target_frame, stamped with the image it was seen in. Origin
+# at the landmark's centre, +x out of its face (towards a robot in front of
+# it), +z up. 6-DOF: projecting it onto the floor is the caller's. Valid only
+# with error_code NONE.
+geometry_msgs/PoseStamped pose
+# Seconds from pose.header.stamp to the answer.
+float32 age
+# Sightings in a row behind this pose, this one included; reset by a frame
+# without the landmark.
+uint16 consecutive
+# True while the plugin holds an alternative pose it has not ruled out
+# (ArUco: the mirrored PnP solution, near the marker's axis at ~1 m). The pose
+# is the plugin's best choice even then. Always false for a plugin with no
+# such ambiguity.
+bool ambiguous
+# The plugin's fit residual in pixels (ArUco: the corners' reprojection
+# error); -1 when the plugin has none. No covariance yet: none of the plugins
+# can fill one honestly.
+float32 reprojection_error_px
