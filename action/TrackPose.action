@@ -1,0 +1,121 @@
+# Drive base_link to a pose that keeps moving: a tracked pose, updated from a
+# topic or a TF frame for the whole goal, plus a fixed offset. Served by
+# controller_server (syncai_controller, SyncAI-Robot-Workspace) on the
+# relative name `track_pose` -> <robot_id>/track_pose, beside follow_path and
+# dock_to_pose, one of the three at a time. New 2026-11, for the last metre of
+# a charge: a node of the charge tree polls the landmark detector's
+# detect_landmark service and publishes the sightings it trusts on the topic
+# this follows; the detector itself publishes nothing. Nothing in this action
+# knows what is tracked.
+#
+# Modelled on nav2's FollowObject (opennav_following), whose field names it
+# keeps, with three differences, which are why it is not FollowObject itself
+# (that one is also not a Humble apt package):
+# - It SUCCEEDS once the goal checker accepts the pose. FollowObject stops
+#   there and waits for the object to move again, and succeeds only after
+#   its static_object_timeout or max_duration; a charge goes on to lie down.
+# - The offset and the controller / goal checker are per goal. FollowObject's
+#   distance is one server parameter along the object's heading; chargers of
+#   different models dock at different offsets, and this stack picks plugins
+#   per goal (DockToPose does).
+# - Its codes sit in NavigateToGoal's 3xx docking range (FollowObject: 9xx).
+#
+# Why not DockToPose with its goal re-sent: DockToPose treats a moved target
+# as a hazard -- every preempt restarts its timeout and re-checks that the
+# robot stands in front of the new pose, which keeps dock.xml from driving
+# blind to a dock moved after staging -- and its goal is planar, with no
+# stamp, transformed with the TF of the moment it arrives. Tracking needs the
+# opposite on both counts.
+#
+# Each tracked pose is transformed into the controller's odom frame AT ITS OWN
+# STAMP (the capture time: the robot has moved since), the offset applied,
+# and the result projected onto the floor (x, y, yaw) as the target the
+# controller plugin is handed. No path, no costmap: like dock_to_pose, the
+# approach is blind, so a stale pose stops the robot (pose_timeout) and a
+# lost one ends the goal (lost_timeout).
+
+# Topic of geometry_msgs/PoseStamped to follow, any frame, stamped with when
+# the pose was true. Every message is trusted: a publisher unsure of a pose
+# does not publish it (the charge tree drops a DetectLandmark answer that is
+# ambiguous), rather than leave the judgement to a controller that cannot make
+# it.
+string pose_topic
+# Or a TF frame to follow, when pose_topic is empty. Exactly one of the two.
+string tracked_frame
+# Where base_link must end up, in the tracked pose's own frame. For a charger
+# tag (+x out of its face, +z up) docked 0.33 m in front of it, facing it:
+# position.x 0.33, orientation a yaw of pi. Only its planar part (x, y, yaw)
+# survives the projection onto the floor.
+geometry_msgs/Pose target_offset
+# Id in controller_server's controller_plugins; empty -> the server's
+# default_track_controller_id.
+string controller_id
+# Id in controller_server's goal_checker_plugins; empty -> the server's
+# default_track_goal_checker_id.
+string goal_checker_id
+# No new pose this long: the robot stops and waits (feedback HOLDING), and
+# moves again on the next pose. Zero -> the server's default.
+builtin_interfaces/Duration pose_timeout
+# No pose this long, from the start or since the last one: LOST. Zero -> the
+# server's default.
+builtin_interfaces/Duration lost_timeout
+# The whole goal, from acceptance; tracked-pose updates never restart it.
+# Zero -> the server's default.
+builtin_interfaces/Duration max_duration
+---
+# Why the goal ended. Meaningful ONLY with status ABORTED; SUCCEEDED and
+# CANCELED carry NONE, and ABORTED + NONE is "superseded or not started" (the
+# server aborts a preempted goal with a default result), as for DockToPose
+# and NavigateToGoal.
+#
+# 33x: inside NavigateToGoal.DOCK_FAILED (300), as base + n, apart from
+# DockToPose's 301-305 so a log line names the server. Never renumber.
+uint16 NONE=0
+uint16 UNKNOWN=1
+# Both or neither of pose_topic / tracked_frame, or a target_offset that is
+# not a rotation (a zero quaternion).
+uint16 INVALID_GOAL=331
+# A tracked pose could not be transformed into odom at its stamp (an unknown
+# frame, a stamp older than the TF buffer), or the robot's own pose was
+# unavailable.
+uint16 TRANSFORM_FAILED=332
+# No pose for lost_timeout: none ever came, or none since the last one.
+uint16 LOST=333
+# The controller threw, the robot pose was lost past failure_tolerance, or
+# the progress checker saw no movement: error_msg has the controller's words.
+uint16 FAILED_TO_CONTROL=334
+# max_duration elapsed before the goal checker accepted the pose.
+uint16 TIMEOUT=335
+# follow_path or dock_to_pose was driving the robot.
+uint16 CONTROLLER_BUSY=336
+# controller_id or goal_checker_id names a plugin that is not loaded;
+# error_msg lists the ones that are.
+uint16 INVALID_PLUGIN=337
+
+uint16 error_code
+# Human-readable detail for the operator; empty when error_code is NONE.
+string error_msg
+builtin_interfaces/Duration total_elapsed_time
+# Robot to target on the last control cycle that had both, whatever the
+# status: metres and radians, lateral across the target's heading (+ = the
+# robot is left of it). final_distance_error is -1.0 when no cycle had both
+# (no pose ever came), and the other two are then meaningless.
+float32 final_distance_error
+float32 final_lateral_error
+float32 final_yaw_error
+---
+# Published once per control cycle (controller_frequency).
+uint8 WAITING_FOR_POSE=1
+uint8 TRACKING=2
+# The newest pose is older than pose_timeout: stopped, waiting for the next.
+uint8 HOLDING=3
+uint8 state
+# Robot to target (0 while WAITING_FOR_POSE): metres and radians, lateral as
+# in the result.
+float32 distance_to_target
+float32 lateral_error
+float32 yaw_error
+# How old the newest tracked pose is [s]; -1 while WAITING_FOR_POSE.
+float32 pose_age
+uint32 poses_received
+builtin_interfaces/Duration tracking_time
