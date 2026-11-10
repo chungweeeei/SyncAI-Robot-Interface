@@ -57,10 +57,16 @@ uint16 UNKNOWN_LANDMARK=2
 # Retry: this call woke the detector, or it woke recently, and no frame has
 # arrived yet.
 uint16 SENSOR_STARTING=3
-# Retry, but likely persistent: active and no frame for the node's
-# frame_timeout (the camera stream is down).
+# Retry, but likely persistent: active, and the plugin cannot use its sensor
+# -- no frame for the node's frame_timeout (the camera stream is down), or
+# frames it cannot use: no camera_info or one for another resolution, a frame
+# that does not decode or that the detection threw on. error_msg says which.
+# A bad frame's reason is cleared by the next good one.
 uint16 SENSOR_UNAVAILABLE=4
-# Retry: frames arrive, no sighting newer than max_age.
+# Retry: frames arrive, no sighting newer than max_age -- or the newest is in
+# an image stamped more than max_age ahead of the node's clock, so how old it
+# is cannot be told (the camera's and the node's clocks disagree; error_msg
+# says by how much).
 uint16 NOT_DETECTED=5
 # Retry: the sensor -> target_frame transform at the image stamp failed.
 # Never with target_frame empty.
@@ -74,7 +80,8 @@ string error_msg
 # it), +z up. 6-DOF: projecting it onto the floor is the caller's. Valid only
 # with error_code NONE.
 geometry_msgs/PoseStamped pose
-# Seconds from pose.header.stamp to the answer.
+# Seconds from pose.header.stamp to the answer. Never negative: an image
+# stamped ahead of the node's clock by up to max_age answers 0.
 float32 age
 # Sightings in a row behind this pose, this one included; reset by a frame
 # without the landmark.
