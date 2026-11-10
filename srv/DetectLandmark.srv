@@ -28,7 +28,14 @@
 
 # Registry name, e.g. "charger_a". Required.
 string landmark_id
-# Frame of the returned pose; empty -> the node's odom_frame. The pose is
+# Frame of the returned pose; empty -> the sensor's own frame, untransformed
+# (the image's frame_id, <robot_id>/camera_optical_frame for the camera: z
+# ahead, x right, y down). Empty is the default because it needs no TF and so
+# answers in every mode: a detector that saw the landmark should never fail on
+# a frame the caller did not ask for (until 2026-11-10 empty meant the node's
+# odom_frame, which failed TRANSFORM_FAILED wherever lio_bridge was not
+# running). A fixed frame for a docking target is the consumer's to choose:
+# name it here, or transform the result with its stamp. Any other frame is
 # transformed at the image stamp, not at the call: the robot moves between
 # the capture and the call. Prefer odom (continuous) over map (jumps on a
 # localizer correction).
@@ -55,7 +62,8 @@ uint16 SENSOR_STARTING=3
 uint16 SENSOR_UNAVAILABLE=4
 # Retry: frames arrive, no sighting newer than max_age.
 uint16 NOT_DETECTED=5
-# Retry: the camera -> target_frame transform at the image stamp failed.
+# Retry: the sensor -> target_frame transform at the image stamp failed.
+# Never with target_frame empty.
 uint16 TRANSFORM_FAILED=6
 
 uint16 error_code
