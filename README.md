@@ -23,6 +23,7 @@ syncai_backend ──NavigateToGoal────────────► synca
 syncai_backend ──NavigateThroughGoals───────► syncai_task_runner   (the PATROL step, once it migrates off nav2_msgs/NavigateThroughPoses)
 syncai_task_runner ──ComputePathToPose / ComputePathThroughPoses──► syncai_global_planner (planner_server; from the BT's planner nodes)
 syncai_task_runner ──DockToPose─────────────► syncai_controller (controller_server; from the docking trees' DockToPose BT node)
+syncai_task_runner ──TrackPose──────────────► syncai_controller (controller_server; the charge tree's last metre, following a pose stream)
 syncai_task_runner ──SetMotionKey───────────► syncai_driver_manager (the docking trees' gait switch)
 syncai_task_runner ──DetectLandmark─────────► syncai_landmark_detection (landmark_detector; from the charge tree's DetectLandmark BT node)
 ```
@@ -403,6 +404,48 @@ dock.xml` (`undock.xml` to back out), and the `DockToPose` BT node in
 | `INVALID_PLUGIN` = 305 | `controller_id` / `goal_checker_id` is not loaded; `error_msg` lists what is |
 
 3xx is `NavigateToGoal.DOCK_FAILED`'s range: these are its `base + n` reasons.
+
+### TrackPose
+
+Drive `base_link` to a pose that keeps moving: a pose stream (`pose_topic`,
+`geometry_msgs/PoseStamped`) or a TF frame (`tracked_frame`) followed for the
+whole goal, plus a fixed `target_offset`. Served by `controller_server` on
+`track_pose` (`<robot_id>/track_pose`) beside `follow_path` and
+`dock_to_pose`, one of the three at a time. Added 2026-11 for the last metre
+of a charge, where a node of the charge tree polls `DetectLandmark` and
+publishes the sightings it trusts on the topic followed (the detector itself
+publishes nothing); the action knows nothing of landmarks. Modelled on nav2's `FollowObject`
+(field names kept) but it **succeeds once the goal checker accepts the pose**,
+takes the offset and `controller_id` / `goal_checker_id` per goal, and uses
+3xx codes. Not `DockToPose` re-sent: that one treats a moved target as a
+hazard (each preempt restarts its timeout and re-checks the start gate) and
+takes a planar, unstamped goal.
+
+- **Goal:** `pose_topic` or `tracked_frame` (exactly one); `target_offset`
+  (`base_link`'s pose at the end, in the tracked pose's frame — a tag docked
+  0.33 m in front: `x: 0.33`, yaw π); `controller_id`, `goal_checker_id`
+  (empty → the server's track defaults); `pose_timeout` (stop and wait),
+  `lost_timeout` (abort), `max_duration` (never restarted by an update) —
+  `Duration`s, zero → server defaults. Each pose is transformed into odom **at
+  its own stamp** and projected onto the floor. Every pose on the topic is
+  trusted: a publisher unsure of one does not publish it.
+- **Result:** `error_code`, `error_msg`, `total_elapsed_time`,
+  `final_distance_error` / `final_lateral_error` / `final_yaw_error`.
+- **Feedback:** `state` (`WAITING_FOR_POSE` / `TRACKING` / `HOLDING`),
+  `distance_to_target`, `lateral_error`, `yaw_error`, `pose_age`,
+  `poses_received`, `tracking_time`, once per control cycle.
+
+| `error_code` | Meaning |
+|---|---|
+| `NONE` = 0 | Also `SUCCEEDED` and `CANCELED`; `ABORTED` + `NONE` is "superseded or not started" |
+| `UNKNOWN` = 1 | |
+| `INVALID_GOAL` = 331 | Both or neither of `pose_topic` / `tracked_frame`, or a `target_offset` that is not a rotation |
+| `TRANSFORM_FAILED` = 332 | A pose not transformable into odom at its stamp, or no robot pose |
+| `LOST` = 333 | No pose for `lost_timeout` |
+| `FAILED_TO_CONTROL` = 334 | The controller threw, the robot pose was lost past `failure_tolerance`, or no progress |
+| `TIMEOUT` = 335 | `max_duration` elapsed before the goal checker accepted the pose |
+| `CONTROLLER_BUSY` = 336 | `follow_path` or `dock_to_pose` was driving |
+| `INVALID_PLUGIN` = 337 | `controller_id` / `goal_checker_id` is not loaded |
 
 ### ExecuteTask
 
