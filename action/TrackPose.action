@@ -33,12 +33,29 @@
 # controller plugin is handed. No path, no costmap: like dock_to_pose, the
 # approach is blind, so a stale pose stops the robot (pose_timeout) and a
 # lost one ends the goal (lost_timeout).
+#
+# The target is held in odom and nowhere else, so the odometry has to be
+# right only from one pose to the next: a slow drift is corrected by every
+# new pose. What a failing odometry does do is guarded here, because the
+# approach is blind (2026-11):
+# - a pose whose stamp the odometry has not reached yet (it lags the camera
+#   when the CPU is saturated) is waited for briefly and then DROPPED, counted
+#   in poses_rejected, never the end of the goal by itself;
+# - with target_filter_window the server knows the target stands still, and
+#   targets that scatter in odom -- the odometry diverging or reset, or the
+#   publisher flipping between two solutions -- stop the robot at once and,
+#   if they do not settle, end the goal TARGET_UNSTABLE.
+# Once the robot is inside the goal checker's tolerances the target is FROZEN
+# until it leaves them again: the checker's settling is timed against one
+# target, and this close the tracked thing may be out of view, so pose_timeout
+# does not apply while frozen.
 
 # Topic of geometry_msgs/PoseStamped to follow, any frame, stamped with when
-# the pose was true. Every message is trusted: a publisher unsure of a pose
-# does not publish it (the charge tree drops a DetectLandmark answer that is
-# ambiguous), rather than leave the judgement to a controller that cannot make
-# it.
+# the pose was true. A publisher unsure of a pose does not publish it (the
+# charge tree drops a DetectLandmark answer that is ambiguous), rather than
+# leave the judgement to a controller that cannot make it: the server takes
+# every message as a sighting of the target, and target_filter_window is the
+# only thing it holds against one.
 string pose_topic
 # Or a TF frame to follow, when pose_topic is empty. Exactly one of the two.
 string tracked_frame
@@ -62,6 +79,13 @@ builtin_interfaces/Duration lost_timeout
 # The whole goal, from acceptance; tracked-pose updates never restart it.
 # Zero -> the server's default.
 builtin_interfaces/Duration max_duration
+# Seconds of targets (in odom) the server keeps and takes the MEDIAN of, for
+# a tracked thing that stands still (a charger): one sighting's noise -- a
+# tag's yaw, which the offset turns into centimetres across the target's axis
+# -- no longer moves the target, and the window's scatter is the test behind
+# TARGET_UNSTABLE. 0 (the default) -> no filter, each pose is the target, and
+# no stability test: for a tracked thing that moves. Appended 2026-11.
+float32 target_filter_window
 ---
 # Why the goal ended. Meaningful ONLY with status ABORTED; SUCCEEDED and
 # CANCELED carry NONE, and ABORTED + NONE is "superseded or not started" (the
@@ -75,14 +99,19 @@ uint16 UNKNOWN=1
 # Both or neither of pose_topic / tracked_frame, or a target_offset that is
 # not a rotation (a zero quaternion).
 uint16 INVALID_GOAL=331
-# A tracked pose could not be transformed into odom at its stamp (an unknown
-# frame, a stamp older than the TF buffer), or the robot's own pose was
-# unavailable.
+# Poses came, and for lost_timeout not one of them could be transformed into
+# odom at its stamp (an unknown frame, a stamp older than the TF buffer, an
+# odometry that lags the poses). One such pose is dropped and counted
+# (poses_rejected), not an error: until 2026-11 this read as if the first
+# ended the goal. The robot's own pose missing is FAILED_TO_CONTROL.
 uint16 TRANSFORM_FAILED=332
 # No pose for lost_timeout: none ever came, or none since the last one.
 uint16 LOST=333
-# The controller threw, the robot pose was lost past failure_tolerance, or
-# the progress checker saw no movement: error_msg has the controller's words.
+# The controller threw, the robot pose was lost past failure_tolerance, the
+# odometry moved the robot faster than anything this action commands, or the
+# robot stood too far from the first target for a blind approach: error_msg
+# has the reason. No progress checker runs (a robot holding still for a pose
+# is not stuck); max_duration bounds the goal.
 uint16 FAILED_TO_CONTROL=334
 # max_duration elapsed before the goal checker accepted the pose.
 uint16 TIMEOUT=335
@@ -91,6 +120,12 @@ uint16 CONTROLLER_BUSY=336
 # controller_id or goal_checker_id names a plugin that is not loaded;
 # error_msg lists the ones that are.
 uint16 INVALID_PLUGIN=337
+# Only with target_filter_window: for lost_timeout the targets in the window
+# scattered wider than the server's limits, so there was never one target to
+# drive to. The tracked thing moved, the odometry is not to be trusted
+# (diverging, or reset under the goal), or the publisher alternates between
+# two poses. Appended 2026-11.
+uint16 TARGET_UNSTABLE=338
 
 uint16 error_code
 # Human-readable detail for the operator; empty when error_code is NONE.
@@ -107,7 +142,8 @@ float32 final_yaw_error
 # Published once per control cycle (controller_frequency).
 uint8 WAITING_FOR_POSE=1
 uint8 TRACKING=2
-# The newest pose is older than pose_timeout: stopped, waiting for the next.
+# Stopped, waiting: the newest pose is older than pose_timeout, or the
+# window's targets scatter (see TARGET_UNSTABLE).
 uint8 HOLDING=3
 uint8 state
 # Robot to target (0 while WAITING_FOR_POSE): metres and radians, lateral as
@@ -119,3 +155,7 @@ float32 yaw_error
 float32 pose_age
 uint32 poses_received
 builtin_interfaces/Duration tracking_time
+# Of poses_received, how many were dropped because they could not be
+# transformed into odom at their stamp. Climbing = the odometry lags the
+# poses. Appended 2026-11.
+uint32 poses_rejected
