@@ -426,26 +426,38 @@ takes a planar, unstamped goal.
   0.33 m in front: `x: 0.33`, yaw π); `controller_id`, `goal_checker_id`
   (empty → the server's track defaults); `pose_timeout` (stop and wait),
   `lost_timeout` (abort), `max_duration` (never restarted by an update) —
-  `Duration`s, zero → server defaults. Each pose is transformed into odom **at
-  its own stamp** and projected onto the floor. Every pose on the topic is
-  trusted: a publisher unsure of one does not publish it.
+  `Duration`s, zero → server defaults; `target_filter_window` (2026-11:
+  seconds of targets in odom the server takes the **median** of, for a tracked
+  thing that stands still; 0 → no filter). Each pose is transformed into odom
+  **at its own stamp** and projected onto the floor. A publisher unsure of a
+  pose does not publish it; the server takes every message as a sighting.
 - **Result:** `error_code`, `error_msg`, `total_elapsed_time`,
   `final_distance_error` / `final_lateral_error` / `final_yaw_error`.
 - **Feedback:** `state` (`WAITING_FOR_POSE` / `TRACKING` / `HOLDING`),
   `distance_to_target`, `lateral_error`, `yaw_error`, `pose_age`,
-  `poses_received`, `tracking_time`, once per control cycle.
+  `poses_received`, `tracking_time`, `poses_rejected`, once per control cycle.
+
+The target lives in odom, so the odometry only has to hold from one pose to
+the next. What a failing odometry does is guarded (2026-11): a pose the
+odometry has not reached yet is waited for, then dropped and counted in
+`poses_rejected` — never the end of the goal by itself; with a filter window,
+targets that scatter in odom stop the robot (`HOLDING`) and end the goal
+`TARGET_UNSTABLE` if they do not settle. Inside the goal checker's tolerances
+the target is frozen until the robot leaves them, and `pose_timeout` does not
+apply.
 
 | `error_code` | Meaning |
 |---|---|
 | `NONE` = 0 | Also `SUCCEEDED` and `CANCELED`; `ABORTED` + `NONE` is "superseded or not started" |
 | `UNKNOWN` = 1 | |
 | `INVALID_GOAL` = 331 | Both or neither of `pose_topic` / `tracked_frame`, or a `target_offset` that is not a rotation |
-| `TRANSFORM_FAILED` = 332 | A pose not transformable into odom at its stamp, or no robot pose |
+| `TRANSFORM_FAILED` = 332 | Poses came and none was transformable into odom at its stamp for `lost_timeout` (one such pose is only dropped) |
 | `LOST` = 333 | No pose for `lost_timeout` |
-| `FAILED_TO_CONTROL` = 334 | The controller threw, the robot pose was lost past `failure_tolerance`, or no progress |
+| `FAILED_TO_CONTROL` = 334 | The controller threw, the robot pose was lost past `failure_tolerance`, the odometry moved faster than anything commanded, or the robot stood too far from the first target. No progress checker runs |
 | `TIMEOUT` = 335 | `max_duration` elapsed before the goal checker accepted the pose |
 | `CONTROLLER_BUSY` = 336 | `follow_path` or `dock_to_pose` was driving |
 | `INVALID_PLUGIN` = 337 | `controller_id` / `goal_checker_id` is not loaded |
+| `TARGET_UNSTABLE` = 338 | With `target_filter_window`: the window's targets scattered past the server's limits for `lost_timeout` — the tracked thing moved, the odometry diverged or was reset, or the publisher alternates between two poses |
 
 ### ExecuteTask
 
