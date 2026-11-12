@@ -46,7 +46,7 @@ float32 max_age
 ---
 # Retry = the same call may succeed later; permanent = it will not.
 #
-# Numbered locally, not in NavigateToGoal's 3xx docking range as DockToPose's
+# Numbered locally, not in NavigateToGoal's 3xx docking range as TrackPose's
 # are: detection is not docking-specific (any tree may look for a landmark),
 # and the DetectLandmark BT node maps these to the tree's own failure.
 uint16 NONE=0

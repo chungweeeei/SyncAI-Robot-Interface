@@ -1,8 +1,9 @@
 # Drive base_link to a pose that keeps moving: a tracked pose, updated from a
 # topic or a TF frame for the whole goal, plus a fixed offset. Served by
 # controller_server (syncai_controller, SyncAI-Robot-Workspace) on the
-# relative name `track_pose` -> <robot_id>/track_pose, beside follow_path and
-# dock_to_pose, one of the three at a time. New 2026-11, for the last metre of
+# relative name `track_pose` -> <robot_id>/track_pose, beside follow_path,
+# one of the two at a time (dock_to_pose, the third until 2026-11-12, went
+# with DockToPose.action). New 2026-11, for the last metre of
 # a charge: a node of the charge tree polls the landmark detector's
 # detect_landmark service and publishes the sightings it trusts on the topic
 # this follows; the detector itself publishes nothing. Nothing in this action
@@ -17,21 +18,21 @@
 # - The offset and the controller / goal checker are per goal. FollowObject's
 #   distance is one server parameter along the object's heading; chargers of
 #   different models dock at different offsets, and this stack picks plugins
-#   per goal (DockToPose does).
+#   per goal (FollowPath does).
 # - Its codes sit in NavigateToGoal's 3xx docking range (FollowObject: 9xx).
 #
-# Why not DockToPose with its goal re-sent: DockToPose treats a moved target
-# as a hazard -- every preempt restarts its timeout and re-checks that the
-# robot stands in front of the new pose, which keeps dock.xml from driving
-# blind to a dock moved after staging -- and its goal is planar, with no
-# stamp, transformed with the TF of the moment it arrives. Tracking needs the
+# Why not DockToPose (removed 2026-11-12) with its goal re-sent: it treated a
+# moved target
+# as a hazard -- every preempt restarted its timeout and re-checked that the
+# robot stood in front of the new pose, which kept dock.xml from driving
+# blind to a dock moved after staging -- and its goal was planar, with no
+# stamp, transformed with the TF of the moment it arrived. Tracking needs the
 # opposite on both counts.
 #
 # Each tracked pose is transformed into the controller's odom frame AT ITS OWN
 # STAMP (the capture time: the robot has moved since), the offset applied,
 # and the result projected onto the floor (x, y, yaw) as the target the
-# controller plugin is handed. No path, no costmap: like dock_to_pose, the
-# approach is blind, so a stale pose stops the robot (pose_timeout) and a
+# controller plugin is handed. No path, no costmap: the approach is blind, so a stale pose stops the robot (pose_timeout) and a
 # lost one ends the goal (lost_timeout).
 #
 # The target is held in odom and nowhere else, so the odometry has to be
@@ -89,11 +90,12 @@ float32 target_filter_window
 ---
 # Why the goal ended. Meaningful ONLY with status ABORTED; SUCCEEDED and
 # CANCELED carry NONE, and ABORTED + NONE is "superseded or not started" (the
-# server aborts a preempted goal with a default result), as for DockToPose
-# and NavigateToGoal.
+# server aborts a preempted goal with a default result), as for
+# NavigateToGoal.
 #
 # 33x: inside NavigateToGoal.DOCK_FAILED (300), as base + n, apart from
-# DockToPose's 301-305 so a log line names the server. Never renumber.
+# DockToPose's 301-305 (retired with it on 2026-11-12, never reused) so a log
+# line named the server. Never renumber.
 uint16 NONE=0
 uint16 UNKNOWN=1
 # Both or neither of pose_topic / tracked_frame, or a target_offset that is
@@ -115,7 +117,7 @@ uint16 LOST=333
 uint16 FAILED_TO_CONTROL=334
 # max_duration elapsed before the goal checker accepted the pose.
 uint16 TIMEOUT=335
-# follow_path or dock_to_pose was driving the robot.
+# follow_path was driving the robot (or, until 2026-11-12, dock_to_pose).
 uint16 CONTROLLER_BUSY=336
 # controller_id or goal_checker_id names a plugin that is not loaded;
 # error_msg lists the ones that are.

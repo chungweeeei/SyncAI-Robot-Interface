@@ -76,8 +76,8 @@ int32 policy_state
 # SetMotionKey key "5" to the controller command `MODE M`, and the controller
 # then reports 5 here -- the same number as the key, which the other keys do
 # not promise (key "1" is Locomotion, reported 1, but nothing says the
-# mapping is the identity in general). syncai_task_runner's docking trees wait
-# for it (the WaitForMotionState BT node). The table may still be incomplete:
+# mapping is the identity in general). syncai_task_runner's trees that switch the
+# gait wait for it (the WaitForMotionState BT node). The table may still be incomplete:
 # pass an unknown integer through -- do not clamp it, do not treat it as an
 # error.
 int32 motion_state
