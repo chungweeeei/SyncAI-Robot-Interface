@@ -19,9 +19,9 @@
 geometry_msgs/PoseStamped pose
 # Path of a BT XML to tick instead of the default move.xml; empty = the
 # default. Absolute, or (since 2026-10) a bare file name resolved against
-# task_runner's own behavior_trees/ directory: "dock.xml" and "undock.xml"
-# are the docking trees (see DockToPose.action), and for those `pose` is the
-# DOCK pose -- the trees derive the staging pose from it themselves. A new
+# task_runner's own behavior_trees/ directory ("dock.xml" / "undock.xml",
+# the docking trees whose `pose` was the dock pose, went on 2026-11-12 with
+# DockToPose.action; a goal naming one is rejected before the tree runs). A new
 # goal sent while one runs is accepted in place (no restart, no replan
 # cycle) only if it names the same tree; otherwise it is terminated and the
 # running goal continues.
@@ -43,9 +43,9 @@ string behavior_tree
 #   1..99    navigator / tree level
 #   100..199 the path-following branch (FollowPath -> syncai_controller)
 #   200..299 the planning branch (ComputePathToPose -> syncai_planner)
-#   300..399 the docking branch (dock.xml / undock.xml only: SetMotionKey ->
-#            syncai_driver_manager, DockToPose -> syncai_controller's
-#            dock_to_pose; DockToPose.action numbers its own reasons 301..)
+#   300..399 the docking branch (the last metre onto a charger:
+#            TrackPose.action numbers its own reasons 331..; 301..305 were
+#            DockToPose's, retired with it on 2026-11-12 and never reused)
 # The branch constants are their range's base. A finer reason is base + n
 # and a client that switches on the hundreds keeps working. The bases are a
 # contract between this file and the backend: never renumber them.
@@ -88,18 +88,12 @@ uint16 MAP_LOADING=221
 uint16 START_IN_KEEPOUT=222
 uint16 GOAL_IN_KEEPOUT=223
 uint16 DISCONNECTED=224
-# The docking branch of behavior_trees/dock.xml or undock.xml failed: the
-# gait controller refused a motion-mode switch (the driver's safety lock,
-# "LOCKED"), the dock pose was unusable (no orientation, staging distance
-# <= 0), or the dock approach / back-out aborted -- the controller's
-# DockToPose reason (transform, timeout, lost control) is in error_msg. The
-# tree restores RL locomotion before reporting this, so the robot is left in
-# the gait the step found it in -- except when only dock.xml's final
-# lie-down was refused: the robot is then standing ON the dock, still in MPC,
-# and is deliberately not switched to the walking gait. A dock goal can still end with PLAN_FAILED
-# / FOLLOW_PATH_FAILED: that is dock.xml's staging leg, i.e. the dock was
-# unreachable, not the dock itself. dock and undock share this base because
-# the backend knows which tree it sent; error_msg says approach or back-out.
+# The docking branch failed: the last metre onto a charger (TrackPose, its
+# reason in error_msg), or the gait switch around it (the controller refused
+# or never reported the mode). A goal of such a tree can still end with
+# PLAN_FAILED / FOLLOW_PATH_FAILED: that is its staging leg, i.e. the charger
+# was unreachable, not the charger itself. Until 2026-11-12 also dock.xml /
+# undock.xml's (DockToPose), which went with that action.
 uint16 DOCK_FAILED=300
 
 uint16 error_code

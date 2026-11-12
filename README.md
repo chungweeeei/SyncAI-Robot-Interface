@@ -19,12 +19,11 @@ syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapp
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid / AutoLocalize / ResetOdometry──► syncai_localizer (localizer_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose;
-                                                                   a DOCK / UNDOCK step is the same action with behavior_tree = dock.xml / undock.xml)
+                                                                   a CHARGE step is the same action with behavior_tree = charge.xml)
 syncai_backend ──NavigateThroughGoals───────► syncai_task_runner   (the PATROL step, once it migrates off nav2_msgs/NavigateThroughPoses)
 syncai_task_runner ──ComputePathToPose / ComputePathThroughPoses──► syncai_global_planner (planner_server; from the BT's planner nodes)
-syncai_task_runner ──DockToPose─────────────► syncai_controller (controller_server; from the docking trees' DockToPose BT node)
 syncai_task_runner ──TrackPose──────────────► syncai_controller (controller_server; the charge tree's last metre, following a pose stream)
-syncai_task_runner ──SetMotionKey───────────► syncai_driver_manager (the docking trees' gait switch)
+syncai_task_runner ──SetMotionKey───────────► syncai_driver_manager (the charge tree's gait switch)
 syncai_task_runner ──DetectLandmark─────────► syncai_landmark_detection (landmark_detector; from the charge tree's DetectLandmark BT node)
 ```
 
@@ -47,8 +46,9 @@ colcon build --packages-select syncai_common
 Consumers: `syncai_backend`, `syncai_robot_state`, `syncai_sys_manager`,
 `syncai_driver_manager`, `syncai_pointlio`, `syncai_mapping`,
 `syncai_localizer`, `syncai_task_runner` and, since 2026-10,
-`syncai_controller` (serves `DockToPose`) and `syncai_behavior_tree` (the
-`DockToPose` / `SetMotionKey` client nodes, and since 2026-11 the
+`syncai_controller` (served `DockToPose` until 2026-11-12; serves
+`TrackPose` since 2026-11) and `syncai_behavior_tree` (the `SetMotionKey`
+client node, and since 2026-11 the
 `ComputePathToPose` / `ComputePathThroughPoses` ones), and since 2026-11
 `syncai_global_planner` (serves both planner actions). Any change here is an ABI break
 for all of them — see **Gotchas**.
@@ -285,8 +285,9 @@ failed wifi connect becomes HTTP 400 with that string).
 
 - **Goal:** `pose` (`PoseStamped`, in `map`), `behavior_tree` (absolute XML
   path, or since 2026-10 a bare file name resolved against task_runner's
-  `behavior_trees/`; empty = default `move.xml`; `dock.xml` / `undock.xml`
-  are the docking trees, and for those `pose` is the **dock** pose).
+  `behavior_trees/`; empty = default `move.xml`. `dock.xml` / `undock.xml`,
+  the docking trees, went on 2026-11-12 with `DockToPose`: a goal naming one
+  is rejected before the tree runs).
 - **Result:** `error_code`, `error_msg`.
 - **Feedback:** nav2's `current_pose`, `navigation_time`,
   `estimated_time_remaining`, `number_of_recoveries`, `distance_remaining`,
@@ -308,7 +309,7 @@ action; that one is removed after the backend migrates.
 | `FOLLOW_PATH_FAILED` = 100 | Path following failed after retries: blocked with no detour, no progress, or robot pose lost. 1xx is the controller range |
 | `PLAN_FAILED` = 200 | Planning failed twice (after a dynamic-overlay clear) with no finer reason. 2xx is the planner range |
 | 201–224 | The planner's own reason (2026-11), copied unchanged from `ComputePathToPose`'s result — see **Planning failure codes** |
-| `DOCK_FAILED` = 300 | The docking branch of `dock.xml` / `undock.xml` failed (2026-10): the gait controller refused the mode switch (`LOCKED`), the dock pose was unusable, or the dock approach / back-out aborted — the controller's `DockToPose` reason is in `error_msg`. The tree restores RL locomotion first. A dock goal can still carry 100 / 200: that is `dock.xml`'s staging leg, i.e. the dock was unreachable. 3xx is the docking range |
+| `DOCK_FAILED` = 300 | The docking branch failed: the last metre onto a charger (`TrackPose`, its reason in `error_msg`) or the gait switch around it. Such a goal can still carry 100 / 200: that is its staging leg, i.e. the charger was unreachable. 3xx is the docking range (until 2026-11-12 also `dock.xml` / `undock.xml`'s, through `DockToPose`) |
 
 Ranges follow nav2 Iron's, so a finer code is `base + n`: the planner's
 reasons are since 2026-11, the controller's still to come (Humble's
@@ -366,60 +367,30 @@ sent again later can succeed — what a client deciding on a retry needs.
 | `GOAL_IN_KEEPOUT` = 223 | The goal, or a waypoint, lies inside a keepout zone | no (until the zone is edited) |
 | `DISCONNECTED` = 224 | Start and goal on ground no stair joins | no |
 
-### DockToPose
+### DockToPose (removed 2026-11-12)
 
-The last metre onto (or off) a dock: a pose-to-pose approach with no path and
-no costmap, served by `syncai_controller`'s `controller_server` on
-`dock_to_pose` (`<robot_id>/dock_to_pose`) beside the unchanged
-`nav2_msgs/FollowPath`, one of the two at a time. Added 2026-10. The backend
-does **not** call it: a dock is a `NavigateToGoal` with `behavior_tree:
-dock.xml` (`undock.xml` to back out), and the `DockToPose` BT node in
-`syncai_behavior_tree` is its only client.
-
-- **Goal:** a **planar pose, not a `PoseStamped`** — `frame_id` (empty →
-  `map`), `x` / `y` (m) and `yaw` (rad, counter-clockwise from the frame's
-  +x), since 2026-10-14, because the controller uses nothing else and a
-  hand-written quaternion is the easiest part of a CLI goal to get wrong. Any
-  TF frame works (`<robot_id>/base_link` with `x: 1.0` is "1 m ahead"); the
-  pose is transformed into the controller's odom frame **once** at
-  acceptance and tracked there, so a localizer correction never moves the
-  target mid-approach. Then `controller_id`
-  (empty → `Docking`; `Undocking` backs out — direction is a controller
-  configuration, not a goal field), `goal_checker_id` (empty →
-  `dock_goal_checker`), `timeout` (s; `<= 0` → the server's 60).
-- **Result:** `error_code`, `error_msg`, `final_distance_error` /
-  `final_yaw_error` (the residual on the last cycle that had a robot pose;
-  distance `-1.0` when none did).
-- **Feedback:** `distance_to_dock`, `yaw_error`, `speed`, `docking_time`, once
-  per control cycle.
-
-| `error_code` | Meaning |
-|---|---|
-| `NONE` = 0 | Also `SUCCEEDED` and `CANCELED`. **`ABORTED` + `NONE` is "superseded or not started"**, as for `NavigateToGoal` |
-| `UNKNOWN` = 1 | |
-| `TRANSFORM_FAILED` = 301 | The goal pose could not be transformed into odom (an unknown `frame_id`, no `map → odom`), or the robot's own pose was unavailable |
-| `CONTROLLER_BUSY` = 302 | A `FollowPath` goal was executing |
-| `FAILED_TO_CONTROL` = 303 | The controller threw, the robot pose was lost past `failure_tolerance`, or no progress — `error_msg` has the controller's words |
-| `TIMEOUT` = 304 | `timeout` elapsed before the goal checker accepted the pose |
-| `INVALID_PLUGIN` = 305 | `controller_id` / `goal_checker_id` is not loaded; `error_msg` lists what is |
-
-3xx is `NavigateToGoal.DOCK_FAILED`'s range: these are its `base + n` reasons.
+The last metre onto (or off) a dock, a pose-to-pose approach served by
+`controller_server` on `dock_to_pose` for `dock.xml` / `undock.xml` (2026-10).
+It went with those trees and the `DockingController`; a charge's last metre is
+`TrackPose`. Its codes 301–305 (`TRANSFORM_FAILED`, `CONTROLLER_BUSY`,
+`FAILED_TO_CONTROL`, `TIMEOUT`, `INVALID_PLUGIN`) stay retired inside the 300
+range — never reuse them, since logs and bags from before still carry them.
 
 ### TrackPose
 
 Drive `base_link` to a pose that keeps moving: a pose stream (`pose_topic`,
 `geometry_msgs/PoseStamped`) or a TF frame (`tracked_frame`) followed for the
 whole goal, plus a fixed `target_offset`. Served by `controller_server` on
-`track_pose` (`<robot_id>/track_pose`) beside `follow_path` and
-`dock_to_pose`, one of the three at a time. Added 2026-11 for the last metre
+`track_pose` (`<robot_id>/track_pose`) beside `follow_path`, one of the two
+at a time (`dock_to_pose` was the third until 2026-11-12). Added 2026-11 for the last metre
 of a charge, where a node of the charge tree polls `DetectLandmark` and
 publishes the sightings it trusts on the topic followed (the detector itself
 publishes nothing); the action knows nothing of landmarks. Modelled on nav2's `FollowObject`
 (field names kept) but it **succeeds once the goal checker accepts the pose**,
 takes the offset and `controller_id` / `goal_checker_id` per goal, and uses
-3xx codes. Not `DockToPose` re-sent: that one treats a moved target as a
-hazard (each preempt restarts its timeout and re-checks the start gate) and
-takes a planar, unstamped goal.
+3xx codes. Not `DockToPose` re-sent (when it existed): that one treated a moved target as a
+hazard (each preempt restarted its timeout and re-checked the start gate) and
+took a planar, unstamped goal.
 
 - **Goal:** `pose_topic` or `tracked_frame` (exactly one); `target_offset`
   (`base_link`'s pose at the end, in the tracked pose's frame — a tag docked
@@ -455,7 +426,7 @@ apply.
 | `LOST` = 333 | No pose for `lost_timeout` |
 | `FAILED_TO_CONTROL` = 334 | The controller threw, the robot pose was lost past `failure_tolerance`, the odometry moved faster than anything commanded, or the robot stood too far from the first target. No progress checker runs |
 | `TIMEOUT` = 335 | `max_duration` elapsed before the goal checker accepted the pose |
-| `CONTROLLER_BUSY` = 336 | `follow_path` or `dock_to_pose` was driving |
+| `CONTROLLER_BUSY` = 336 | `follow_path` was driving (or, until 2026-11-12, `dock_to_pose`) |
 | `INVALID_PLUGIN` = 337 | `controller_id` / `goal_checker_id` is not loaded |
 | `TARGET_UNSTABLE` = 338 | With `target_filter_window`: the window's targets scattered past the server's limits for `lost_timeout` — the tracked thing moved, the odometry diverged or was reset, or the publisher alternates between two poses |
 
@@ -531,7 +502,8 @@ ros2 interface list | grep syncai_common
   consumers, so nothing fails loudly — but old bags decode to the wrong names
   (as happened when `RobotStatus` gained `UNINITIALIZED = 0`).
   `NavigateToGoal`'s `100` / `200` / `300` bases are fixed because the backend
-  switches on them, and `DockToPose`'s 301–305 sit inside the 300 range for
+  switches on them, and the 3xx reasons (`TrackPose`'s 331–338; the retired
+  `DockToPose`'s 301–305, never to be reused) sit inside the 300 range for
   the same reason. The planning codes 200–224 are written out in **four**
   files (`ComputePathToPose`, `ComputePathThroughPoses`, `NavigateToGoal`,
   `NavigateThroughGoals`; an interface cannot import another's constants):
