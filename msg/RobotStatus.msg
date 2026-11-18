@@ -18,10 +18,16 @@
 # battery below 20%, latched with hysteresis so it does not flap at the publish
 # rate. It is advisory — nothing acts on it.
 #
-# RUNNING and ERROR are declared but never emitted. CHARGING cannot currently be
-# derived at all: syncai_driver_manager hardcodes
-# BatteryState.power_supply_status to UNKNOWN and the sign convention of
-# `current` is undocumented.
+# CHARGING (2026-11-18, SyncAI-Robot-State) comes from battery_state's
+# power_supply_status, which syncai_driver_manager derives from the sign of the
+# pack's NET current with a 0.1 A deadband: the charger delivering more than the
+# robot draws. Latched: it holds while a filling pack's current tapers into the
+# deadband (NOT_CHARGING) and drops on the first DISCHARGING, which a robot taken
+# off its charger reads as soon as it draws its own load. It outranks WARNING (a
+# low pack on its charger is what is being fixed) and is outranked by
+# UNINITIALIZED.
+#
+# RUNNING and ERROR are declared but never emitted.
 #
 # Renumbering was safe when it was done: no consumer in the workspace read the
 # numeric value (GET /api/v1/robot/state does not even expose `state`). It does
