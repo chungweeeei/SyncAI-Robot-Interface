@@ -87,9 +87,12 @@ float32 age
 # without the landmark.
 uint16 consecutive
 # True while the plugin holds an alternative pose it has not ruled out
-# (ArUco: the mirrored PnP solution, near the marker's axis at ~1 m). The pose
-# is the plugin's best choice even then. Always false for a plugin with no
-# such ambiguity.
+# (ArUco: the mirrored PnP solution -- the same position, the face's normal
+# reflected about the viewing ray; on robot01, 2026-11-18, every sighting of
+# the charger's marker from further than about 0.6 m). The pose is the
+# plugin's best choice even then, and may change sides from one frame to the
+# next: its position can be used, its orientation is one of two. Always false
+# for a plugin with no such ambiguity.
 bool ambiguous
 # The plugin's fit residual in pixels (ArUco: the corners' reprojection
 # error); -1 when the plugin has none. No covariance yet: none of the plugins

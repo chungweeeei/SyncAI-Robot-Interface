@@ -52,9 +52,12 @@
 # does not apply while frozen.
 
 # Topic of geometry_msgs/PoseStamped to follow, any frame, stamped with when
-# the pose was true. A publisher unsure of a pose does not publish it (the
-# charge tree drops a DetectLandmark answer that is ambiguous), rather than
-# leave the judgement to a controller that cannot make it: the server takes
+# the pose was true. A publisher unsure of a pose does not publish it as it
+# came (of a DetectLandmark answer that is ambiguous the charge tree keeps
+# the position and turns the face square to the sensor, since 2026-11-18;
+# it dropped them before, and never saw the tag from its staging pose),
+# rather than leave the judgement to a controller that cannot make it: the
+# server takes
 # every message as a sighting of the target, and target_filter_window is the
 # only thing it holds against one.
 string pose_topic
