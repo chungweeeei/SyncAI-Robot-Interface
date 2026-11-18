@@ -29,8 +29,9 @@ string map
 uint8 mode
 # state values are defined as constants in RobotStatus
 # (UNINITIALIZED/IDLE/RUNNING/WARNING/ERROR/CHARGING). Derived by
-# syncai_robot_state, most-severe-first; today only UNINITIALIZED (no pose),
-# WARNING (low battery) and IDLE are ever emitted.
+# syncai_robot_state, most-severe-first; today UNINITIALIZED (no pose),
+# CHARGING (on the charger, see RobotStatus), WARNING (low battery) and IDLE
+# are emitted, never RUNNING or ERROR.
 uint8 state
 RobotLocalizationStatus localization_status
 RobotNetworkStatus network_status
