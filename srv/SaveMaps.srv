@@ -17,7 +17,14 @@
 # and, with save_patches:
 #   patches/<i>.pcd    one body-frame cloud per keyframe
 #   poses.txt          one line per keyframe: "<i>.pcd tx ty tz qw qx qy qz"
-# patches/ is removed and recreated on each save. The layout is what the
+# and, with save_patches after a resume_mapping (ResumeMapping.srv):
+#   sessions.json      where each mapping run begins in poses.txt:
+#                      {"version": 1, "sessions": [{"first", "count"}, ...]}.
+#                      Rows of one session are one continuous walk; between
+#                      two sessions the robot was somewhere else. Absent =
+#                      one session, and a save of a single run removes it.
+# patches/ is removed and recreated on each save. A save into the directory
+# the run was resumed from is refused. The layout is what the
 # workspace's map catalogue expects under map/<name>/ and what hba_node
 # (RefineMap, also syncai_mapping) refines. Nothing written here names the map or holds an absolute path --
 # poses.txt lists bare basenames -- and that is deliberate: it is what makes

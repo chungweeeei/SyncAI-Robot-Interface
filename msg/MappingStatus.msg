@@ -13,12 +13,13 @@
 # The three states and what moves between them:
 #
 #   IDLE ──start_mapping──► RESETTING ──► MAPPING
+#   IDLE ──resume_mapping──► RESETTING ──► MAPPING     (a saved map loaded)
 #   MAPPING ──reset_mapping──► RESETTING ──► MAPPING   (discard, start over)
 #   MAPPING ──save_maps (success)──► IDLE              (the run is finished)
 #
-# A failed start or reset falls back to the state it left. save_maps and
-# reset_mapping are refused in IDLE; start_mapping is refused in MAPPING.
-# The .srv files carry the rest of the contract.
+# A failed start, resume or reset falls back to the state it left. save_maps
+# and reset_mapping are refused in IDLE; start_mapping and resume_mapping are
+# refused in MAPPING. The .srv files carry the rest of the contract.
 #
 # IDLE is 0 so a default-constructed message reads as the safe state -- the
 # same reasoning RobotStatus gives for UNINITIALIZED = 0.
@@ -30,14 +31,16 @@ uint8 IDLE      = 0
 # Keyframes accumulate; the merged map is written to /dev/shm and announced on
 # pgo/map_cloud_file. reset_mapping discards the graph and stays here.
 uint8 MAPPING   = 1
-# Transient (at most a few seconds): a start_mapping or reset_mapping is
-# between pausing intake and resuming -- the ResetLIO round trip. Every
-# service is refused meanwhile.
+# Transient: a start_mapping or reset_mapping is between pausing intake and
+# resuming -- the ResetLIO round trip, a few seconds. A resume_mapping stays
+# here longer (up to tens of seconds): after the reset it collects scans and
+# searches the saved map for the robot. Every service is refused meanwhile.
 uint8 RESETTING = 2
 
 uint8 state
 
-# Keyframes in the graph. 0 outside MAPPING.
+# Keyframes held: those of this run plus, after a resume_mapping, the saved
+# map's. 0 outside MAPPING.
 uint32 key_poses
 
 # Loop closures the graph has accepted. 0 outside MAPPING.

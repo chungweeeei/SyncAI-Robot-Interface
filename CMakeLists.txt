@@ -47,6 +47,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SaveMaps.srv"
   "srv/ResetMapping.srv"
   "srv/StartMapping.srv"
+  "srv/ResumeMapping.srv"
   "srv/RefineMap.srv"
   "srv/SavePoses.srv"
   "srv/Relocalize.srv"

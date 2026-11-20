@@ -1,0 +1,99 @@
+# Resume a saved map: load it into pgo_node and keep mapping in its frame.
+#
+# Served by pgo_node (`syncai_mapping`, in SyncAI-Robot-Workspace) on the
+# relative name `resume_mapping`, so it lands on <robot_id>/pgo/resume_mapping.
+# Added 2026-11. Until then a run could only begin empty (StartMapping), so a
+# map missing one room was mapped again from its first metre.
+#
+# What it does, in order: read the saved keyframes (poses.txt + patches/) from
+# map_path, pause intake, reset the LIO front end over ResetLIO (reset_lio
+# true), collect about a second of scans, find where the robot stands in the
+# saved map, then go MAPPING with the saved keyframes loaded and the new
+# odometry placed in their frame. The saved map is published at once, so the
+# console shows it before the first new keyframe.
+#
+# THE SAVED KEYFRAMES ARE FROZEN. They are held as constants, never optimised,
+# so the map frame is exactly the saved map's: waypoints, keepout.json and
+# octomap_edits.json made in it stay valid. New keyframes are tied to them by
+# loop closures; the saved map's own drift is not corrected by the new data.
+#
+# Finding the robot: with use_hint, registration is tried only near the hint,
+# and a hint that does not register fails the call -- it never falls back to
+# the global search, because a hint that is wrong usually means the operator
+# and the robot disagree about where it is. Without a hint, the saved
+# keyframe positions are searched over a yaw sweep (seconds); a place that
+# looks like another one (a second candidate scoring about as well, elsewhere)
+# is refused as ambiguous rather than guessed.
+#
+# Only IDLE is accepted, as for StartMapping. A failure leaves pgo IDLE with
+# nothing loaded; when it fails after the LIO reset (the search found no
+# pose), the odometry has been reset all the same, which is harmless in IDLE.
+# The call BLOCKS for the load, the reset, the scans and the search: tens of
+# seconds on a large map. Size the client's timeout for it (60 s).
+#
+# save_maps then writes every keyframe, saved and new, with their indices in
+# one sequence and a sessions.json beside poses.txt naming where each run
+# begins. It must be given ANOTHER directory than map_path: a save into the
+# directory the run was resumed from is refused, since it would delete the
+# only copy of the saved map before the new one is whole.
+#
+# THE ROBOT MUST BE STANDING STILL, inside the saved map, from the call until
+# it returns. See ResetLIO.srv. The alignment's tilt residual is the first
+# thing in the stack that notices a robot that was not.
+
+# The saved map's directory: poses.txt and patches/, as save_maps wrote them
+# with save_patches. A map saved without patches cannot be resumed.
+string map_path
+
+# Reset the LIO front end first -- what the console sends. False resumes over
+# the running odometry stream, a bag-replay affordance (see StartMapping.srv).
+bool reset_lio
+
+# Where the robot is in the saved map, roughly: the lidar body's position (m)
+# and heading (rad) in the map frame. Within a few metres and about 45 degrees
+# is enough. z only picks the storey (the saved keyframes within 1.5 m of it).
+# Ignored unless use_hint.
+bool use_hint
+float64 x
+float64 y
+float64 z
+float64 yaw
+---
+bool success
+# Rendered verbatim by the operator console, as in StartMapping.srv.
+string message
+
+# As in StartMapping.srv. 0.0 when the call failed before the LIO reset.
+float64 lio_last_odom_time
+
+# Keyframes loaded from map_path. 0 when the load failed.
+uint32 prior_key_poses
+
+# How the robot was found. METHOD_NONE when it was not.
+uint8 METHOD_NONE=0
+uint8 METHOD_HINT=1
+uint8 METHOD_GLOBAL=2
+uint8 method
+
+# The lidar body's pose in the saved map's frame, as registered. Zero when
+# the call failed.
+float64 aligned_x
+float64 aligned_y
+float64 aligned_z
+float64 aligned_yaw
+
+# The registration behind it, for the log and for calibrating the gates:
+# mean squared distance over the overlap (m^2), the share of the scan the
+# saved map covers, the share of that overlap within the inlier distance, and
+# the smallest / largest eigenvalue of the registration's x / y information
+# (near 0 in a straight corridor, where the pose can slide along it).
+float64 fitness
+float64 overlap_ratio
+float64 inlier_ratio
+float64 xy_info_ratio
+
+# Roll / pitch (deg) the registration asked for and the alignment dropped: the
+# two runs' gravity estimates disagreeing. The alignment keeps x / y / z / yaw
+# only, because both frames are gravity-aligned; above pgo's
+# resume_max_tilt_deg the call is refused.
+float64 tilt_residual_deg
