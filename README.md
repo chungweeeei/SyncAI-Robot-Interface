@@ -15,7 +15,7 @@ syncai_backend ─────────┼──────────► s
         ▼                                                     │ WifiStatus
 syncai_sys_manager ───────────────────────────────────────────┘
 
-syncai_backend ──StartMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
+syncai_backend ──StartMapping / ResumeMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid / AutoLocalize / ResetOdometry──► syncai_localizer (localizer_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose;
@@ -165,16 +165,17 @@ reconnecting backend gets the state at once. Sent on every transition and at
 ```
 uint8 IDLE      = 0   # no graph, intake dropped, /dev/shm empty; the session starts here
 uint8 MAPPING   = 1   # keyframes accumulate; reset_mapping discards and stays here
-uint8 RESETTING = 2   # transient: a start/reset is waiting on the ResetLIO round trip
+uint8 RESETTING = 2   # transient: a start/reset is waiting on the ResetLIO round trip (seconds);
+                      # a resume also on its scans and its search of the saved map (tens of seconds)
 uint8 state
-uint32 key_poses
+uint32 key_poses      # this run's keyframes plus, after a resume, the saved map's
 uint32 loop_closures
 builtin_interfaces/Time stamp
 ```
 
-`start_mapping`: IDLE → MAPPING. Successful `save_maps`: MAPPING → IDLE.
-`reset_mapping`: MAPPING → MAPPING. `IDLE = 0` so a default-constructed message
-reads as the safe state.
+`start_mapping` / `resume_mapping`: IDLE → MAPPING. Successful `save_maps`:
+MAPPING → IDLE. `reset_mapping`: MAPPING → MAPPING. `IDLE = 0` so a
+default-constructed message reads as the safe state.
 
 ## Services
 
@@ -195,6 +196,7 @@ reads as the safe state.
 | `SaveMaps` | `file_path`, `save_patches` | `success`, `message` | `syncai_mapping` (`pgo_node`) |
 | `ResetMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time`, `uint32 dropped_key_poses` | `syncai_mapping` (`pgo_node`) |
 | `StartMapping` | `reset_lio` | `success`, `message`, `float64 lio_last_odom_time` | `syncai_mapping` (`pgo_node`) |
+| `ResumeMapping` | `map_path`, `reset_lio`, `bool use_hint`, `x`, `y`, `z`, `yaw` (`float64`, radians) | `success`, `message`, `float64 lio_last_odom_time`, `uint32 prior_key_poses`, `uint8 method`, `aligned_x`, `aligned_y`, `aligned_z`, `aligned_yaw`, `fitness`, `overlap_ratio`, `inlier_ratio`, `xy_info_ratio`, `tilt_residual_deg` (`float64`) | `syncai_mapping` (`pgo_node`) |
 | `RefineMap` | `maps_path` | `success`, `message` | `syncai_mapping` (`hba_node`) |
 | `SavePoses` | `file_path` | `success`, `message` | `syncai_mapping` (`hba_node`) |
 | `Relocalize` | `pcd_path`, `x`, `y`, `z`, `yaw`, `pitch`, `roll` (`float32`, radians) | `success`, `message` | `syncai_localizer` (`localizer_node`) |
@@ -233,8 +235,17 @@ Notes:
   refused while IDLE). A successful `SaveMaps` returns pgo to IDLE, frees its
   keyframes and clears `/dev/shm`, so a run is `start_mapping … save_maps`.
   The stillness rule applies here too.
+- **`ResumeMapping` begins a run on top of a saved map** (2026-11): pgo loads
+  the map's `poses.txt` + `patches/`, resets the LIO, finds the robot in the
+  saved map (near the request's hint, or by searching it) and maps on in that
+  map's frame with the saved keyframes frozen. IDLE only, and it **blocks for
+  tens of seconds** (the load, the reset, the scans, the search): size the
+  timeout for 60 s. The run is then saved with `SaveMaps` into **another**
+  directory; a save into `map_path` is refused. The stillness rule applies.
 - **`SaveMaps` writes the layout the map catalogue depends on** (`map.pcd`,
-  `patches/<i>.pcd`, `poses.txt` with bare basenames); the `.srv` documents it.
+  `patches/<i>.pcd`, `poses.txt` with bare basenames, and for a resumed run
+  `sessions.json`, where each mapping run begins in `poses.txt`); the `.srv`
+  documents it.
 - **`RefineMap` / `SavePoses` are offline mapping** (`hba_node`): load the
   `patches/` + `poses.txt` from a `SaveMaps` with `save_patches: true`, refine
   the poses, write them to a separate file. Nothing in a session or the
