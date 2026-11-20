@@ -17,13 +17,21 @@
 # octomap_edits.json made in it stay valid. New keyframes are tied to them by
 # loop closures; the saved map's own drift is not corrected by the new data.
 #
-# Finding the robot: with use_hint, registration is tried only near the hint,
-# and a hint that does not register fails the call -- it never falls back to
-# the global search, because a hint that is wrong usually means the operator
-# and the robot disagree about where it is. Without a hint, the saved
-# keyframe positions are searched over a yaw sweep (seconds); a place that
-# looks like another one (a second candidate scoring about as well, elsewhere)
-# is refused as ambiguous rather than guessed.
+# Finding the robot, three ways (the response's method says which one did):
+#  - use_hint: registration is tried only near the hint, and a hint that does
+#    not register fails the call -- it never falls back to the search, because
+#    a hint that is wrong usually means the operator and the robot disagree
+#    about where it is.
+#  - no hint, and the nav session's localizer last saved a pose on THIS map
+#    (config/state/<robot_id>/last_pose.json, compared by the map directory's
+#    name): that pose is tried first, within about a metre of it. It is where
+#    the robot stopped navigating, so "navigate, switch to mapping, resume"
+#    needs no pose from the caller. A robot moved since then does not register
+#    there, and the call goes on to the search; it does not fail.
+#  - otherwise the saved keyframe positions are searched over a yaw sweep
+#    (seconds); a place that looks like another one (a second candidate
+#    scoring about as well, elsewhere) is refused as ambiguous rather than
+#    guessed.
 #
 # Only IDLE is accepted, as for StartMapping. A failure leaves pgo IDLE with
 # nothing loaded; when it fails after the LIO reset (the search found no
@@ -38,8 +46,7 @@
 # only copy of the saved map before the new one is whole.
 #
 # THE ROBOT MUST BE STANDING STILL, inside the saved map, from the call until
-# it returns. See ResetLIO.srv. The alignment's tilt residual is the first
-# thing in the stack that notices a robot that was not.
+# it returns. See ResetLIO.srv.
 
 # The saved map's directory: poses.txt and patches/, as save_maps wrote them
 # with save_patches. A map saved without patches cannot be resumed.
@@ -69,10 +76,13 @@ float64 lio_last_odom_time
 # Keyframes loaded from map_path. 0 when the load failed.
 uint32 prior_key_poses
 
-# How the robot was found. METHOD_NONE when it was not.
+# How the robot was found. METHOD_NONE when it was not. METHOD_LAST_POSE
+# (2026-11): near the pose the localizer last saved, see above; a consumer
+# that names the values must not assume there are three.
 uint8 METHOD_NONE=0
 uint8 METHOD_HINT=1
 uint8 METHOD_GLOBAL=2
+uint8 METHOD_LAST_POSE=3
 uint8 method
 
 # The lidar body's pose in the saved map's frame, as registered. Zero when
@@ -92,8 +102,11 @@ float64 overlap_ratio
 float64 inlier_ratio
 float64 xy_info_ratio
 
-# Roll / pitch (deg) the registration asked for and the alignment dropped: the
-# two runs' gravity estimates disagreeing. The alignment keeps x / y / z / yaw
-# only, because both frames are gravity-aligned; above pgo's
-# resume_max_tilt_deg the call is refused.
+# Roll / pitch (deg) between the two runs' up directions, as registered. Each
+# run levels itself by its own static IMU initialisation, and two of those
+# differ by a fraction of a degree (0.76 measured on robot01 between two runs
+# begun 85 deg apart in heading). The alignment KEEPS it: the new run takes the
+# saved map's up, or it would lean on the saved map by a centimetre a metre.
+# (Until 2026-11-20 it was dropped, and refused above 1 deg.) Above pgo's
+# resume_max_tilt_deg (3) the call is refused as a registration gone wrong.
 float64 tilt_residual_deg

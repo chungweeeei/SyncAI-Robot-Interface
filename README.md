@@ -237,8 +237,10 @@ Notes:
   The stillness rule applies here too.
 - **`ResumeMapping` begins a run on top of a saved map** (2026-11): pgo loads
   the map's `poses.txt` + `patches/`, resets the LIO, finds the robot in the
-  saved map (near the request's hint, or by searching it) and maps on in that
-  map's frame with the saved keyframes frozen. IDLE only, and it **blocks for
+  saved map (near the request's hint; else near the pose the nav session's
+  localizer last saved on that map, `method` `METHOD_LAST_POSE`; else by
+  searching it) and maps on in that map's frame with the saved keyframes
+  frozen. IDLE only, and it **blocks for
   tens of seconds** (the load, the reset, the scans, the search): size the
   timeout for 60 s. The run is then saved with `SaveMaps` into **another**
   directory; a save into `map_path` is refused. The stillness rule applies.
