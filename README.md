@@ -1,6 +1,6 @@
 # syncai_common
 
-The stack's shared ROS 2 interface definitions — 15 messages, 21 services, 6
+The stack's shared ROS 2 interface definitions — 16 messages, 24 services, 6
 actions. No code, no nodes: `rosidl_generate_interfaces` only.
 
 An interface lives here only when two or more packages share it; single-package
@@ -18,6 +18,8 @@ syncai_sys_manager ────────────────────�
 syncai_backend ──StartMapping / ResumeMapping / SaveMaps / ResetMapping──► syncai_mapping (pgo_node) ──ResetLIO──► syncai_pointlio
 syncai_backend ◄──MappingStatus──────────────────────────── syncai_mapping (pgo_node)
 syncai_backend ──Relocalize / IsValid / AutoLocalize / ResetOdometry──► syncai_localizer (localizer_node) ──ResetLIO──► syncai_pointlio
+syncai_localizer (localizer_node) ──LocalizationStatus──► syncai_robot_state   (facts only: converged? which estimate?)
+syncai_backend ──BeginTask / EndTask / SetRobotState──► syncai_robot_state     (the robot's state machine, and the judge of a task's start)
 syncai_backend ──NavigateToGoal────────────► syncai_task_runner   (the MOVE step, once it migrates off nav2_msgs/NavigateToPose;
                                                                    a CHARGE step is the same action with behavior_tree = charge.xml)
 syncai_backend ──NavigateThroughGoals───────► syncai_task_runner   (the PATROL step, once it migrates off nav2_msgs/NavigateThroughPoses)
@@ -76,19 +78,22 @@ RobotState
 │    └─ string wifi_info          ← a JSON object, see below
 ├─ RobotBatteryStatus battery_status
 │    └─ float64 battery_percentage
-├─ bool          localization_valid   false ⇒ localization_status is ZEROED
+├─ bool          localization_valid   false ⇒ localization_status is ZEROED (TF presence, nothing more)
 ├─ MotorStates   motor_status         the whole motor_states message (timestamp rescaled)
 │    ├─ uint64        timestamp       SECONDS here (the topic carries NANOSECONDS)
 │    └─ MotorState[]  states          per-joint temperature / tau_est / error
-└─ RobotLowLevelMode low_level_mode   the GAIT CONTROLLER's state machine — not `mode` above
-     ├─ int32  policy_state           0 PPO / 1 HIMLOCO / 2 CHAMP / 3 ISSAC (no sentinel)
-     ├─ int32  motion_state           0 Stand / 1 Locomotion / 2 LieDown / 3 Damping /
-     │                                4 ESTOP / 5 MPC (read off the robot) / 8 UNKNOWN
-     └─ bool   safety_state           driver_manager's safety lock engaged (OURS, not the controller's)
+├─ RobotLowLevelMode low_level_mode   the GAIT CONTROLLER's state machine — not `mode` above
+│    ├─ int32  policy_state           0 PPO / 1 HIMLOCO / 2 CHAMP / 3 ISSAC (no sentinel)
+│    ├─ int32  motion_state           0 Stand / 1 Locomotion / 2 LieDown / 3 Damping /
+│    │                                4 ESTOP / 5 MPC (read off the robot) / 8 UNKNOWN
+│    └─ bool   safety_state           driver_manager's safety lock engaged (OURS, not the controller's)
+├─ bool   localization_converged      the localizer's last guess landed: the position CAN be confirmed
+└─ string state_message               one sentence for an operator: why this state
 ```
 
 `localization_valid` and `motor_status` **must not reach the REST payload**
-(`low_level_mode` is exposed deliberately). That payload is a frozen
+(`low_level_mode`, `localization_converged` and `state_message` are exposed
+deliberately). That payload is a frozen
 third-party contract whose fields the router names one by one. Adding a field
 here must not add one there.
 
@@ -102,7 +107,7 @@ robots, so a shared absolute `/robot_state` would interleave them.
 | `RobotNetworkStatus` | `wifi_info` | A JSON string — see below |
 | `RobotBatteryStatus` | `battery_percentage` | 0–100, scaled from `sensor_msgs/BatteryState.percentage` |
 | `RobotMode` | `MAINTENANCE=0`, `MANUAL=1`, `AUTO=2`, `CALIBRATION=3` | **Constants only**, names the values of `RobotState.mode`. `CALIBRATION` (2026-10) is the lidar-camera calibration session; a consumer that maps the values to names must not assume there are three. |
-| `RobotStatus` | `UNINITIALIZED=0`, `IDLE=1`, `RUNNING=2`, `WARNING=3`, `ERROR=4`, `CHARGING=5` | Constants only, for `state`. `0` is `UNINITIALIZED` so a default-constructed message does not claim `IDLE`. |
+| `RobotStatus` | `UNINITIALIZED=0`, `IDLE=1`, `RUNNING=2`, `WARNING=3`, `ERROR=4`, `CHARGING=5` | Constants only, for `state`. `0` is `UNINITIALIZED` so a default-constructed message does not claim `IDLE`. Since 2026-11 a state machine `syncai_robot_state` owns — see "The robot's state machine". |
 | `RobotLowLevelMode` | `policy_state`, `motion_state`, `safety_state` | The gait controller's state machine, from the `mode` topic. Both indices are the **controller's** vocabularies and carry **no constants** (see `SetPolicyMode`). No freshness field: `0 / 0` before the first sample looks like a real `PPO / Stand`. `safety_state` is instead `syncai_driver_manager`'s own lock (latched `safety_locked` topic). Nothing triggers that lock outside tests yet, so `false` is not a checked safety signal. |
 
 `mode` is the live byobu session. `syncai_robot_state` polls
@@ -111,25 +116,61 @@ flight) because sys_manager publishes no mode topic. It reads `AUTO` until the
 first answer, so a mapping session shows `AUTO` for up to one poll before
 `MANUAL`. The REST layer exposes it.
 
-`state` uses three of the six values, most severe first:
+`state` is the rollup of a state machine `syncai_robot_state` owns (2026-11),
+most severe first: `ERROR` > `UNINITIALIZED` > `RUNNING` > `CHARGING` >
+`WARNING` > `IDLE`. REST exposes it by name.
 
-- `UNINITIALIZED` — the `map → base_link` TF did not resolve, so
-  `localization_status` is zeroed. It outranks `WARNING` so a low battery never
-  hides that the pose is a placeholder. `localization_valid` comes from the same
-  lookup, so the two cannot disagree.
-- `WARNING` — battery below 20%, with hysteresis (clears above 25%).
-- `IDLE` — otherwise.
+#### The robot's state machine
 
-`RUNNING` and `ERROR` are not emitted yet. **`CHARGING` cannot be derived**:
-`syncai_driver_manager` hardcodes `BatteryState.power_supply_status` to
-`UNKNOWN`, and the sign convention of `current` is undocumented. REST does not
-expose `state`.
+```
+boot ──► UNINITIALIZED ──SetRobotState(IDLE)──► IDLE
+IDLE ──BeginTask accepted──► RUNNING ──EndTask(COMPLETED / CANCELED)──► IDLE
+RUNNING ──EndTask(FAILED)──► ERROR ──SetRobotState──► IDLE or UNINITIALIZED
+IDLE ──map switch / new guess / SetRobotState(UNINITIALIZED)──► UNINITIALIZED
+```
 
-**Why `wifi_info` is a JSON string.** `syncai_robot_state` flattens the latest
-`WifiStatus` into `{"ssid", "bssid", "rssi", "ip_address", "mac_address"}`.
-Before the first `wifi_status` it is the literal `"null"`, so the backend parses
-it defensively. A string keeps the aggregate stable while wifi reporting is in
-flux.
+- `UNINITIALIZED` — **no operator has confirmed the robot's position.** The
+  robot boots here and returns here by itself when the estimate changes under
+  a confirmation (`LocalizationStatus.pose_epoch`: a map load, a new guess).
+  Nothing the stack does by itself leaves it — a boot guess that converges
+  does not. A task with a MOVE / PATROL / CHARGE step is refused; one without
+  is still accepted. Until 2026-11 it meant only "the `map → base_link` TF has
+  never been seen", which is over within seconds of boot and never true after
+  a map switch; that reading survives as `localization_valid`.
+- `RUNNING` — a task `BeginTask` accepted and `EndTask` has not closed. One at
+  a time.
+- `ERROR` — **latched**: a task ended `FAILED` (a driver fault is to be the
+  second cause). Every task is refused until an operator's `SetRobotState`.
+  `state_message` says what failed.
+- `CHARGING` — the charger delivers more than the robot draws
+  (`RobotStatus.msg`). Display only.
+- `WARNING` — battery below 20%, with hysteresis (clears above 25%). Display
+  only.
+- `IDLE` — otherwise: confirmed, nothing running.
+
+A state that is neither `ERROR` nor `UNINITIALIZED` therefore says the position
+is confirmed; there is no separate field for it. The price: a posture task run
+on an unconfirmed robot reads `UNINITIALIZED` while it runs.
+
+### LocalizationStatus
+
+`localizer_node`'s facts about its own estimate, on the relative topic
+`localization_status` (`<robot_id>/localization_status`, bare namespace),
+**RELIABLE + TRANSIENT_LOCAL depth 1**, sent on every change. Its one consumer
+is `syncai_robot_state`.
+
+```
+builtin_interfaces/Time stamp
+string map          # the loaded map's directory name; "" with no map
+bool   converged    # what relocalize_check answers: the last guess landed
+uint64 pose_epoch   # changes on a map load and on every guess queued; compare for equality only
+```
+
+The localizer judges nothing and holds no "confirmed" flag: a confirmation is
+`syncai_robot_state` remembering the `pose_epoch` it was given at, so any
+change of the estimate withdraws it without an event to miss. The epoch is
+seeded from the wall clock at start-up — a counter from zero reaches the same
+value on every boot, and a confirmation would survive a restarted localizer.
 
 ### Wifi
 
@@ -203,10 +244,27 @@ default-constructed message reads as the safe state.
 | `IsValid` | `int32 code` | `bool valid` | `syncai_localizer` (`localizer_node`) |
 | `AutoLocalize` | *(empty)* | `success`, `message`, `x`, `y`, `z`, `yaw`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
 | `ResetOdometry` | `bool use_hint`, `x`, `y`, `yaw` (`float32`, radians), `bool global_fallback`, `bool skip_seed` | `success`, `message`, `string method`, `x`, `y`, `yaw`, `z`, `fitness`, `inlier_ratio` (`float32`), `int32 candidates` | `syncai_localizer` (`localizer_node`) |
+| `SetRobotState` | `uint8 state` (`RobotStatus.IDLE` / `UNINITIALIZED`) | `success`, `uint8 code`, `message`, `uint8 state` | `syncai_robot_state` |
+| `BeginTask` | `task_id`, `bool needs_localization` | `bool accepted`, `uint8 code`, `message` | `syncai_robot_state` |
+| `EndTask` | `task_id`, `uint8 outcome`, `reason` | `success`, `message` | `syncai_robot_state` |
 | `DetectLandmark` | `landmark_id`, `target_frame`, `float32 max_age` | `error_code` (`uint16`), `error_msg`, `geometry_msgs/PoseStamped pose`, `float32 age`, `uint16 consecutive`, `bool ambiguous`, `float32 reprojection_error_px` | `syncai_landmark_detection` (`landmark_detector`) |
 
 Notes:
 
+- **`BeginTask` is a decision, `EndTask` its other half** (2026-11). The
+  backend asks `begin_task` as the first activity of every task run — a run a
+  schedule started included, which no REST check sees — and an accepted task
+  is `RUNNING` from that call on. Refusals: `ERROR_LATCHED` (every task),
+  `NOT_INITIALIZED` (`needs_localization` on an unconfirmed robot), `BUSY`
+  (another `task_id`). A refused run fails at once and sends no `end_task`; an
+  accepted one sends exactly one. Idempotent per `task_id`, so a retried call
+  cannot read `BUSY` against itself. `EndTask.outcome` has no zero value on
+  purpose.
+- **`SetRobotState` is the operator's switch**, the only way into `IDLE` from
+  `UNINITIALIZED` and the only way out of `ERROR`. `IDLE` is refused
+  `NOT_CONVERGED` while the localizer's last guess has not landed. It is
+  **not** refused while a task runs — it is also the recovery for a task
+  whose `end_task` never comes — so the backend refuses it for a running job.
 - **`SetMotionKey.key` is a string**, forwarded verbatim to the gait
   controller: `0` stand, `1` locomotion, `2` lie down, `3` damping, `4`
   emergency stop, `5` MPC. Backend callers: the `STANDUP` / `LIEDOWN` task
