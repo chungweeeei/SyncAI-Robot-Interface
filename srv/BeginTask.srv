@@ -1,0 +1,42 @@
+# Ask the robot whether a task may start. Served by syncai_robot_state on the
+# relative name `begin_task`, so it lands on <robot_id>/begin_task (2026-11).
+#
+# The backend calls it as the first activity of every task run, before any
+# step -- above all for a run a Temporal Schedule started by itself, which no
+# REST-side check ever sees. The answer is a decision, taken and applied in one
+# place: an accepted task IS running from this call on (RobotStatus.RUNNING),
+# so two runs cannot both be let through, and there is no sample of
+# `robot_state` to read a second too late.
+#
+# An accepted task must be closed with EndTask, exactly once. A refused one
+# must NOT be: a refusal changes nothing here, and in particular never latches
+# ERROR -- a schedule that fires on an unconfirmed robot fails, and the robot
+# is still merely unconfirmed.
+#
+# Idempotent per task_id: a second begin_task for the task already running is
+# accepted again. A caller that lost the first answer and retries would
+# otherwise read BUSY against itself and leave the robot RUNNING for good.
+
+# The caller's own id for the run, unique among runs that can be open at once
+# (the backend sends its Temporal workflow id). EndTask must carry the same.
+string task_id
+# True when the run has a step that drives on the map (MOVE / PATROL /
+# CHARGE). An unconfirmed robot refuses those and still takes a task without
+# one: standing up or speaking needs no position.
+bool needs_localization
+---
+uint8 NONE            = 0
+# needs_localization, and no operator has confirmed the position (or the
+# confirmation was withdrawn by a map switch or a new guess).
+uint8 NOT_INITIALIZED = 1
+# ERROR is latched: EVERY task is refused, needs_localization or not, until
+# SetRobotState releases it.
+uint8 ERROR_LATCHED   = 2
+# Another task_id is running.
+uint8 BUSY            = 3
+
+bool accepted
+uint8 code
+# One English sentence, written for an operator; on a refusal it is the
+# reason the run's first step fails with.
+string message

@@ -1,0 +1,41 @@
+# The operator's switch on the robot's state machine. Served by
+# syncai_robot_state on the relative name `set_robot_state`, so it lands on
+# <robot_id>/set_robot_state. The backend calls it for
+# POST /api/v1/robot/state, the console's Confirm control (2026-11).
+#
+# It is the ONLY way into IDLE from UNINITIALIZED and the ONLY way out of
+# ERROR. Nothing the stack does by itself confirms a position: a boot guess
+# that converges on the last saved pose leaves the robot UNINITIALIZED until a
+# person has looked at it.
+#
+#   state: RobotStatus.IDLE           "the robot is where the map shows it".
+#          Refused NOT_CONVERGED unless the localizer's last guess has
+#          converged (LocalizationStatus.converged) -- there is no estimate to
+#          confirm otherwise. The confirmation is of that estimate: a map
+#          switch or a new guess withdraws it (LocalizationStatus.pose_epoch).
+#   state: RobotStatus.UNINITIALIZED  withdraw the confirmation. Never refused.
+#
+# Either one also releases a latched ERROR, and clears a task the robot still
+# counts as running. The second is the recovery for a workflow terminated from
+# outside, whose end_task never comes -- which is why this service does NOT
+# refuse while a task runs. The caller does: the backend answers 409 while its
+# own job list has a running job, and it is the one that knows.
+#
+# Any other value is refused INVALID_TARGET: RUNNING, ERROR, WARNING and
+# CHARGING are derived, never commanded.
+uint8 state
+---
+uint8 NONE           = 0
+# IDLE asked for while the localizer has not converged, or has not been heard
+# from at all (the mapping session runs no localizer).
+uint8 NOT_CONVERGED  = 1
+uint8 INVALID_TARGET = 2
+
+bool success
+uint8 code
+# One English sentence, written for an operator.
+string message
+# The state the robot reports after the call (a RobotStatus value) -- on a
+# refusal, the unchanged one. Note the rollup: a confirmed robot on its
+# charger answers CHARGING, not IDLE.
+uint8 state

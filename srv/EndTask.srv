@@ -1,0 +1,33 @@
+# Report how a task accepted by BeginTask ended. Served by syncai_robot_state
+# on the relative name `end_task`, so it lands on <robot_id>/end_task
+# (2026-11).
+#
+#   COMPLETED / CANCELED  the robot stops counting the task as running, and
+#                         nothing else changes: a robot that was unconfirmed
+#                         while it stood up is unconfirmed afterwards.
+#   FAILED                the same, and ERROR is latched -- every later
+#                         BeginTask is refused until an operator releases it
+#                         with SetRobotState. `reason` is what the console
+#                         shows meanwhile.
+#
+# Matched by task_id: a report for a task the robot is not running is a no-op
+# answered success: false. That makes a repeated report harmless, and it means
+# a syncai_robot_state restarted mid-task (UNINITIALIZED again, no task) does
+# not latch ERROR from the run it forgot.
+
+# 0 is deliberately no outcome, so a default-constructed request cannot
+# report a completion nobody wrote -- RobotStatus's reasoning for
+# UNINITIALIZED = 0. It is refused.
+uint8 COMPLETED = 1
+uint8 FAILED    = 2
+uint8 CANCELED  = 3
+
+# The id BeginTask was accepted with.
+string task_id
+uint8 outcome
+# Why, for FAILED: one sentence an operator can read (the failed step's own
+# error). Ignored for the other two.
+string reason
+---
+bool success
+string message

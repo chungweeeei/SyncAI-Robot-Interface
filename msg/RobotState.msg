@@ -28,10 +28,17 @@ string map
 # the full disambiguation.
 uint8 mode
 # state values are defined as constants in RobotStatus
-# (UNINITIALIZED/IDLE/RUNNING/WARNING/ERROR/CHARGING). Derived by
-# syncai_robot_state, most-severe-first; today UNINITIALIZED (no pose),
-# CHARGING (on the charger, see RobotStatus), WARNING (low battery) and IDLE
-# are emitted, never RUNNING or ERROR.
+# (UNINITIALIZED/IDLE/RUNNING/WARNING/ERROR/CHARGING). Since 2026-11 this is the
+# rollup of a state machine syncai_robot_state OWNS, not a derivation: ERROR
+# (a task failed; latched until an operator releases it) > UNINITIALIZED (no
+# operator has confirmed the position) > RUNNING (a task accepted by
+# begin_task) > CHARGING > WARNING (low battery) > IDLE. RobotStatus has the
+# transitions and who drives them.
+#
+# The order is load-bearing for a reader: a state that is neither ERROR nor
+# UNINITIALIZED says the position IS confirmed, which is why no separate
+# "confirmed" field exists. The price is that a posture task run on an
+# unconfirmed robot reads UNINITIALIZED, not RUNNING, while it runs.
 uint8 state
 RobotLocalizationStatus localization_status
 RobotNetworkStatus network_status
@@ -45,10 +52,12 @@ RobotBatteryStatus battery_status
 # with no age attached gets mistaken for a live one, whereas the map origin is an
 # obviously suspicious reading.
 #
-# This overlaps with `state == UNINITIALIZED` on purpose: the flag is the precise
-# answer for a consumer that only cares whether the pose can be trusted, the
-# state is the coarse rollup. They are derived from the same lookup and cannot
-# disagree.
+# NOT what `state == UNINITIALIZED` means any more (2026-11). This flag is TF
+# presence and nothing else: it turns true a few seconds after boot, when the
+# localizer starts broadcasting an identity correction, and reads true against a
+# map the robot was never localized in. `state` now waits for an operator's
+# confirmation (RobotStatus, SetRobotState). The one direction that still holds:
+# while this is false the state is UNINITIALIZED, since there is no pose at all.
 #
 # syncai_backend gates its RobotRepo write on this flag, which is what keeps
 # GET /api/v1/robot/state returning 404 rather than a pose at (0, 0, 0).
@@ -128,3 +137,29 @@ MotorStates motor_status
 # which is where you look when a label comes back UNKNOWN (MPC's code, or the
 # controller's startup sentinel; REST cannot tell them apart).
 RobotLowLevelMode low_level_mode
+
+# The localizer's last guess has converged (LocalizationStatus.converged,
+# copied): there is an estimate an operator can confirm, so SetRobotState to
+# IDLE will not be refused NOT_CONVERGED. False until the localizer has been
+# heard from, and for as long as the mapping session runs without one.
+#
+# It says the Confirm control may be pressed, NOT that the position is right --
+# that judgement is the operator's, looking at the live scan on the map, and it
+# is the whole reason a converged boot guess does not confirm itself.
+#
+# EXPOSED over GET /api/v1/robot/state, deliberately, like low_level_mode: the
+# console disables its Confirm control on it.
+bool localization_converged
+
+# One English sentence for an operator saying why the state is what it is:
+# what the robot is waiting for while UNINITIALIZED, which task is RUNNING,
+# which task failed and with what reason while ERROR. Written to be shown
+# verbatim, so it names no node, topic or service. Empty when there is nothing
+# to add to the state's own name (IDLE, WARNING, CHARGING).
+#
+# The reason field RobotLowLevelMode's note above says WARNING lacks: ERROR has
+# more than one cause by design (a failed task today, a driver fault later), and
+# a state with several causes is unreadable without one.
+#
+# EXPOSED over GET /api/v1/robot/state, deliberately.
+string state_message

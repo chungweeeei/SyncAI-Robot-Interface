@@ -7,7 +7,8 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-# MappingStatus.stamp is a builtin_interfaces/Time, NavigateToGoal carries
+# MappingStatus.stamp and LocalizationStatus.stamp are builtin_interfaces/Time,
+# NavigateToGoal carries
 # geometry_msgs/PoseStamped (goal and feedback), and the
 # ComputePath* results a nav_msgs/Path (2026-11) -- the fields here of
 # another package's type, so the DEPENDENCIES entry below is load-bearing
@@ -18,6 +19,7 @@ find_package(nav_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/IMUState.msg"
+  "msg/LocalizationStatus.msg"
   "msg/MappingStatus.msg"
   "msg/MotorState.msg"
   "msg/MotorStates.msg"
@@ -55,6 +57,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/AutoLocalize.srv"
   "srv/ResetOdometry.srv"
   "srv/DetectLandmark.srv"
+  "srv/SetRobotState.srv"
+  "srv/BeginTask.srv"
+  "srv/EndTask.srv"
   "action/ExecuteTask.action"
   "action/NavigateToGoal.action"
   "action/ComputePathToPose.action"
